@@ -1,0 +1,76 @@
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix toi: <https://smev.ru/toi/ontology#> .
+
+# =============================================================================
+# SHACL-ограничение OM-2 (сохранение точных пересечений ⊓)
+#
+# Условие: для любых концептов C, D из O₁,
+#   m(C ⊓ D) = m(C) ⊓ m(D)
+# =============================================================================
+
+toi:OM2IntersectionShape a sh:NodeShape ;
+  sh:targetClass toi:OntologyMorphism ;
+  sh:sparql [
+    sh:message "OM-2 (пересечение) нарушено: m(C ⊓ D) ≠ m(C) ⊓ m(D)" ;
+    sh:severity sh:Violation ;
+    sh:prefixes <http://example.org/toi/prefixes> ;
+    sh:select """
+      SELECT $this ?C ?D ?mC ?mD ?mIntersection ?expectedMIntersection
+      WHERE {
+        # Отображение C → m(C)
+        $this toi:hasMapping ?mapC .
+        ?mapC toi:sourceConcept ?C ;
+              toi:targetConcept ?mC .
+
+        # Отображение D → m(D)
+        $this toi:hasMapping ?mapD .
+        ?mapD toi:sourceConcept ?D ;
+              toi:targetConcept ?mD .
+
+        # C ⊓ D (через owl:intersectionOf)
+        ?CIntersection toi:intersectionOf ?listCD .
+        ?listCD rdf:first ?C ;
+                rdf:rest/rdf:first ?D .
+
+        # Ожидаемое m(C ⊓ D) = m(C) ⊓ m(D)
+        ?expectedMIntersection toi:intersectionOf ?listMCMD .
+        ?listMCMD rdf:first ?mC ;
+                  rdf:rest/rdf:first ?mD .
+
+        # Фактическое m(C ⊓ D)
+        $this toi:hasMapping ?mapIntersection .
+        ?mapIntersection toi:sourceConcept ?CIntersection ;
+                         toi:targetConcept ?mIntersection .
+
+        # Проверка неравенства
+        FILTER (?mIntersection != ?expectedMIntersection)
+      }
+    """ ;
+  ] .
+
+# =============================================================================
+# Проверка полноты: для каждого пересечения должно быть отображение
+# =============================================================================
+toi:OM2IntersectionCompletenessShape a sh:NodeShape ;
+  sh:targetClass toi:OntologyMorphism ;
+  sh:sparql [
+    sh:message "OM-2 (пересечение): отображение для C ⊓ D отсутствует" ;
+    sh:severity sh:Violation ;
+    sh:prefixes <http://example.org/toi/prefixes> ;
+    sh:select """
+      SELECT $this ?CIntersection
+      WHERE {
+        ?CIntersection a owl:Class ;
+                      toi:intersectionOf ?list .
+
+        FILTER NOT EXISTS {
+          $this toi:hasMapping ?mapIntersection .
+          ?mapIntersection toi:sourceConcept ?CIntersection .
+        }
+      }
+    """ ;
+  ] .

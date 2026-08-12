@@ -1,0 +1,127 @@
+# =============================================================================
+# prometheus.yml — конфигурация Prometheus для ASG (Adaptive Semantic Gateway)
+# -----------------------------------------------------------------------------
+# Скрейпит asg-core (метрики СМЭВ: запросы, кэш, SHACL, HotL) и инфраструктуру
+# (Redis LRU-кэш, PostgreSQL маппингов, node_exporter системных метрик хоста).
+# Метрики asg-core отдаются в формате Prometheus на /api/v1/metrics.
+# =============================================================================
+global:
+  scrape_interval: 15s          # интервал скрейпинга по умолчанию
+  scrape_timeout: 10s           # таймаут одного скрейпа (меньше scrape_interval)
+  evaluation_interval: 15s      # частота вычисления правил алертов
+  external_labels:
+    monitor: 'asg-monitor'
+    environment: 'dev'          # dev | staging | prod (внешняя метка для remote-write)
+
+# -----------------------------------------------------------------------------
+# Правила алертов (recording rules + alerting rules) — группы:
+#   asg-availability, asg-latency, asg-throughput, asg-errors, asg-hotl, infrastructure
+# -----------------------------------------------------------------------------
+rule_files:
+  - /etc/prometheus/rules.yml
+
+# -----------------------------------------------------------------------------
+# Alertmanager — пока не разворачивается в dev; раскомментировать для prod.
+# -----------------------------------------------------------------------------
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            # - alertmanager:9093
+          labels:
+            environment: 'dev'
+
+# -----------------------------------------------------------------------------
+# Цели скрейпинга
+# -----------------------------------------------------------------------------
+scrape_configs:
+  # ─── asg-core — основной микросервис АСШ (REST + gRPC, SHACL, маппинг) ───
+  # Метрики экспонируются в формате Prometheus на /api/v1/metrics.
+  # Бизнес-метрики: asg_translate_requests_total{ontology,status},
+  # asg_translate_duration_seconds_bucket, asg_cache_hits_total,
+  # asg_cache_misses_total, asg_shacl_violations_total{shape},
+  # asg_hotl_escalations_total{contour}, asg_active_grpc_streams.
+  - job_name: 'asg-core'
+    metrics_path: /api/v1/metrics
+    scheme: http
+    scrape_interval: 15s
+    scrape_timeout: 10s
+    honor_labels: true
+    static_configs:
+      - targets: ['asg-core:8080']
+        labels:
+          service: 'asg-core'
+          component: 'gateway'
+          namespace: 'asg'
+
+  # ─── Redis — LRU-кэш транслированных запросов (redis_exporter :9121) ───
+  # Отслеживаем: cache_hit_ratio, evicted_keys, memory_usage, подключений.
+  - job_name: 'redis'
+    metrics_path: /metrics
+    scrape_interval: 15s
+    scrape_timeout: 10s
+    static_configs:
+      - targets: ['redis:9121']
+        labels:
+          service: 'redis'
+          component: 'cache'
+          namespace: 'asg'
+
+  # ─── PostgreSQL — маппинги онтологий + журнал аудита (postgres_exporter :9187) ───
+  # Отслеживаем: active_connections, transactions, slow_queries, lock_count.
+  - job_name: 'postgres'
+    metrics_path: /metrics
+    scrape_interval: 15s
+    scrape_timeout: 10s
+    static_configs:
+      - targets: ['postgres:9187']
+        labels:
+          service: 'postgres'
+          component: 'database'
+          namespace: 'asg'
+
+  # ─── node_exporter — системные метрики хоста (CPU/RAM/disk/network) ───
+  - job_name: 'node'
+    metrics_path: /metrics
+    scrape_interval: 15s
+    scrape_timeout: 10s
+    static_configs:
+      - targets: ['node-exporter:9100']
+        labels:
+          service: 'node'
+          component: 'host'
+          namespace: 'asg'
+
+  # ─── Self-monitor — метрики самого Prometheus (health, queue, scrape duration) ───
+  - job_name: 'prometheus'
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['localhost:9090']
+        labels:
+          service: 'prometheus'
+
+# =============================================================================
+# Remote write (опционально) — для долгосрочного хранения в Cortex/Mimir/Thanos.
+# Для dev отключён; для prod раскомментировать и указать remote endpoint.
+# =============================================================================
+# remote_write:
+#   - url: 'http://mimir-nginx.mimir.svc:8080/api/v1/push'
+#     headers:
+#       X-Scope-OrgID: 'smev-asg'           # tenant ID для multi-tenant Mimir
+#     remote_timeout: 30s
+#     queue_config:
+#       capacity: 10000
+#       max_samples_per_send: 2000
+#       batch_send_deadline: 5s
+#       min_backoff: 500ms
+#       max_backoff: 5s
+#     write_relabel_configs:
+#       - source_labels: [__name__]
+#         regex: 'go_.*'                    # не отправляем Go-runtime метрики в Mimir
+#         action: drop
+
+# Remote read (опционально) — для запроса исторических данных из долгосрочного хранилища.
+# remote_read:
+#   - url: 'http://mimir-nginx.mimir.svc:8080/api/v1/read'
+#     headers:
+#       X-Scope-OrgID: 'smev-asg'

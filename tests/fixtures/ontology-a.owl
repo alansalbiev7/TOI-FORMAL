@@ -1,0 +1,289 @@
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix dct: <http://purl.org/dc/terms/> .
+@prefix : <https://asg.smev.ru/ont/registration/v1.0/> .
+
+# =============================================================================
+# ontology-a.owl
+# Тестовая онтология A (исходная) для k6-фикстур модульных тестов ASG.
+# Домен: регистрационный учёт физических и юридических лиц.
+# 5 классов, 4 объектных свойства, 3 свойства данных.
+# Используется в связке с ontology-b.owl для верификации matcher-агента.
+# =============================================================================
+
+# --- Декларация онтологии ----------------------------------------------------
+
+<https://asg.smev.ru/ont/registration/v1.0> a owl:Ontology ;
+    owl:versionIRI <https://asg.smev.ru/ont/registration/v1.0.0> ;
+    owl:versionInfo "1.0.0"^^xsd:string ;
+    dct:title "Онтология регистрационного учёта (A)"@ru ;
+    dct:description "Тестовая онтология A для модульных тестов ASG. Содержит 5 классов, 4 объектных свойства и 3 свойства данных."@ru ;
+    dct:creator "Салбьев А. Т."@ru ;
+    dct:created "2026-08-13"^^xsd:date ;
+    dct:license <https://creativecommons.org/licenses/by/4.0/> ;
+    rdfs:label "Онтология A: Регистрация"@ru ;
+    rdfs:comment "Смежная онтология для ontology-b.owl. Используется в тестах matcher-агента и валидатора SHACL/OWL2RL/SPARQL."@ru .
+
+# =============================================================================
+# 1. КЛАССЫ (5 шт.)
+# =============================================================================
+
+:Person a owl:Class ;
+    rdfs:subClassOf owl:Thing ;
+    rdfs:label "Физическое лицо"@ru ;
+    rdfs:comment "Гражданин РФ или иностранец, поставленный на регистрационный учёт. Базовый класс домена регистрации. Идентифицируется СНИЛС и/или ИНН."@ru ;
+    rdfs:isDefinedBy <https://asg.smev.ru/ont/registration/v1.0> .
+
+:Address a owl:Class ;
+    rdfs:subClassOf owl:Thing ;
+    rdfs:label "Адрес"@ru ;
+    rdfs:comment "Почтовый или юридически значимый адрес: субъект РФ, муниципальное образование, населённый пункт, улица, дом, квартира. Кодируется по ФИАС (Федеральная информационная адресная система)."@ru ;
+    rdfs:isDefinedBy <https://asg.smev.ru/ont/registration/v1.0> .
+
+:Registration a owl:Class ;
+    rdfs:subClassOf owl:Thing ;
+    rdfs:label "Регистрационный учёт"@ru ;
+    rdfs:comment "Запись о регистрации физического лица по месту жительства или пребывания. Оформляется органами МВД. Содержит дату начала, статус, орган, выдавший документ."@ru ;
+    rdfs:isDefinedBy <https://asg.smev.ru/ont/registration/v1.0> .
+
+:Residence a owl:Class ;
+    rdfs:subClassOf owl:Thing ;
+    rdfs:label "Место жительства"@ru ;
+    rdfs:comment "Фактическое место постоянного или преимущественного проживания физического лица. Может отличаться от адреса регистрационного учёта. Характеризуется типом (постоянное/временное) и регионом."@ru ;
+    rdfs:isDefinedBy <https://asg.smev.ru/ont/registration/v1.0> .
+
+:Organization a owl:Class ;
+    rdfs:subClassOf owl:Thing ;
+    rdfs:label "Организация"@ru ;
+    rdfs:comment "Юридическое лицо или государственный орган, выступающий в роли работодателя, органа регистрации или контрагента. Идентифицируется ОГРН и ИНН."@ru ;
+    rdfs:isDefinedBy <https://asg.smev.ru/ont/registration/v1.0> .
+
+# Все 5 классов попарно дизъюнктны (ключевая аксиома для валидации OM-3)
+[ a owl:AllDisjointClasses ;
+  owl:members ( :Person :Address :Registration :Residence :Organization ) ] .
+
+# =============================================================================
+# 2. ОБЪЕКТНЫЕ СВОЙСТВА (4 шт.)
+# =============================================================================
+
+:hasAddress a owl:ObjectProperty ;
+    rdfs:subPropertyOf owl:topObjectProperty ;
+    rdfs:label "имеет адрес"@ru ;
+    rdfs:comment "Связывает физическое лицо или организацию с их адресом. Кардинальность 1..* для физических лиц (минимум один адрес регистрации)."@ru ;
+    rdfs:domain [ a owl:Class ;
+                  owl:unionOf ( :Person :Organization ) ] ;
+    rdfs:range  :Address ;
+    rdfs:isDefinedBy <https://asg.smev.ru/ont/registration/v1.0> .
+
+:hasRegistration a owl:ObjectProperty ;
+    rdfs:subPropertyOf owl:topObjectProperty ;
+    rdfs:label "имеет регистрацию"@ru ;
+    rdfs:comment "Связывает физическое лицо с записью о его регистрационном учёте. Кардинальность 1..1 (одна активная регистрация)."@ru ;
+    rdfs:domain :Person ;
+    rdfs:range  :Registration ;
+    owl:inverseOf :registrationOf ;
+    rdfs:isDefinedBy <https://asg.smev.ru/ont/registration/v1.0> .
+
+:hasResidence a owl:ObjectProperty ;
+    rdfs:subPropertyOf owl:topObjectProperty ;
+    rdfs:label "имеет место жительства"@ru ;
+    rdfs:comment "Связывает физическое лицо с его местом жительства (фактическим). Может отличаться от места регистрации."@ru ;
+    rdfs:domain :Person ;
+    rdfs:range  :Residence ;
+    rdfs:isDefinedBy <https://asg.smev.ru/ont/registration/v1.0> .
+
+:issuedBy a owl:ObjectProperty ;
+    rdfs:subPropertyOf owl:topObjectProperty ;
+    rdfs:label "выдано органом"@ru ;
+    rdfs:comment "Связывает запись о регистрации с органом, её оформившим (как правило, территориальное подразделение МВД)."@ru ;
+    rdfs:domain :Registration ;
+    rdfs:range  :Organization ;
+    rdfs:isDefinedBy <https://asg.smev.ru/ont/registration/v1.0> .
+
+# Обратное свойство к hasRegistration (для удобства SPARQL-запросов)
+:registrationOf a owl:ObjectProperty ;
+    rdfs:subPropertyOf owl:topObjectProperty ;
+    rdfs:label "регистрация физического лица"@ru ;
+    rdfs:comment "Обратное свойство к hasRegistration. Связывает запись о регистрации с физическим лицом."@ru ;
+    rdfs:domain :Registration ;
+    rdfs:range  :Person ;
+    rdfs:isDefinedBy <https://asg.smev.ru/ont/registration/v1.0> .
+
+# =============================================================================
+# 3. СВОЙСТВА ДАННЫХ (3 шт.)
+# =============================================================================
+
+:fullName a owl:DatatypeProperty ;
+    rdfs:subPropertyOf owl:topDataProperty ;
+    rdfs:label "ФИО"@ru ;
+    rdfs:comment "Полное имя физического лица в формате «Фамилия Имя Отчество». Длина 5–255 символов."@ru ;
+    rdfs:domain :Person ;
+    rdfs:range  xsd:string ;
+    rdfs:isDefinedBy <https://asg.smev.ru/ont/registration/v1.0> .
+
+:region a owl:DatatypeProperty ;
+    rdfs:subPropertyOf owl:topDataProperty ;
+    rdfs:label "код региона"@ru ;
+    rdfs:comment "Код субъекта РФ по ГОСТ 7.67-2003 (двузначный числовой код: 77 — Москва, 50 — Московская область и т. д.)."@ru ;
+    rdfs:domain :Address ;
+    rdfs:range  xsd:string ;
+    rdfs:isDefinedBy <https://asg.smev.ru/ont/registration/v1.0> .
+
+:startDate a owl:DatatypeProperty ;
+    rdfs:subPropertyOf owl:topDataProperty ;
+    rdfs:label "дата начала"@ru ;
+    rdfs:comment "Дата начала действия записи о регистрационном учёте в формате YYYY-MM-DD (xsd:date)."@ru ;
+    rdfs:domain :Registration ;
+    rdfs:range  xsd:date ;
+    rdfs:isDefinedBy <https://asg.smev.ru/ont/registration/v1.0> .
+
+# Дополнительные свойства данных (для полноты картины, не входящие в обязательный набор из 3)
+:status a owl:DatatypeProperty ;
+    rdfs:label "статус"@ru ;
+    rdfs:comment "Статус записи о регистрации: active, cancelled, expired."@ru ;
+    rdfs:domain :Registration ;
+    rdfs:range  xsd:string .
+
+:type a owl:DatatypeProperty ;
+    rdfs:label "тип"@ru ;
+    rdfs:comment "Тип места жительства: permanent, temporary."@ru ;
+    rdfs:domain :Residence ;
+    rdfs:range  xsd:string .
+
+# =============================================================================
+# 4. ОГРАНИЧЕНИЯ КАРДИНАЛЬНОСТИ (owl:Restriction)
+# =============================================================================
+
+:Person rdfs:subClassOf [
+    a owl:Restriction ;
+    owl:onProperty :hasRegistration ;
+    owl:minCardinality "1"^^xsd:nonNegativeInteger ;
+    rdfs:comment "Каждое физическое лицо должно иметь хотя бы одну запись о регистрационном учёте."@ru
+] .
+
+:Person rdfs:subClassOf [
+    a owl:Restriction ;
+    owl:onProperty :hasAddress ;
+    owl:minCardinality "1"^^xsd:nonNegativeInteger ;
+    rdfs:comment "У каждого физического лица должен быть хотя бы один адрес."@ru
+] .
+
+:Registration rdfs:subClassOf [
+    a owl:Restriction ;
+    owl:onProperty :issuedBy ;
+    owl:qualifiedCardinality "1"^^xsd:nonNegativeInteger ;
+    owl:onClass :Organization ;
+    rdfs:comment "Каждая регистрация оформлена ровно одним органом."@ru
+] .
+
+:Organization rdfs:subClassOf [
+    a owl:Restriction ;
+    owl:onProperty :hasAddress ;
+    owl:minCardinality "1"^^xsd:nonNegativeInteger ;
+    rdfs:comment "У каждой организации должен быть юридический адрес."@ru
+] .
+
+# =============================================================================
+# 5. ТИПИРОВАННЫЕ ЭКЗЕМПЛЯРЫ (для тестирования SPARQL-запросов)
+# =============================================================================
+
+:person-ivanov a :Person ;
+    :fullName "Иванов Иван Иванович" ;
+    :hasAddress :address-ivanov ;
+    :hasRegistration :reg-ivanov-2024 ;
+    :hasResidence :residence-ivanov ;
+    rdfs:label "Иванов И. И."@ru .
+
+:person-petrov a :Person ;
+    :fullName "Петров Пётр Петрович" ;
+    :hasAddress :address-petrov ;
+    :hasRegistration :reg-petrov-2025 ;
+    :hasResidence :residence-petrov ;
+    rdfs:label "Петров П. П."@ru .
+
+:address-ivanov a :Address ;
+    :region "50" ;
+    rdfs:label "Адрес Иванова (МО)"@ru ;
+    rdfs:comment "Московская область, г. Подольск, ул. Ленина, д. 1, кв. 2"@ru .
+
+:address-petrov a :Address ;
+    :region "77" ;
+    rdfs:label "Адрес Петрова (Москва)"@ru ;
+    rdfs:comment "г. Москва, ул. Тверская, д. 10, кв. 25"@ru .
+
+:reg-ivanov-2024 a :Registration ;
+    :startDate "2024-01-15"^^xsd:date ;
+    :status "active" ;
+    :issuedBy :org-mvd-podolsk ;
+    rdfs:label "Регистрация Иванова (2024)"@ru .
+
+:reg-petrov-2025 a :Registration ;
+    :startDate "2025-03-14"^^xsd:date ;
+    :status "active" ;
+    :issuedBy :org-mvd-moscow ;
+    rdfs:label "Регистрация Петрова (2025)"@ru .
+
+:residence-ivanov a :Residence ;
+    :type "permanent" ;
+    :region "50" ;
+    rdfs:label "Место жительства Иванова"@ru .
+
+:residence-petrov a :Residence ;
+    :type "permanent" ;
+    :region "77" ;
+    rdfs:label "Место жительства Петрова"@ru .
+
+:org-mvd-podolsk a :Organization ;
+    rdfs:label "ОВМ МВД России по г. Подольску"@ru ;
+    rdfs:comment "Отдел по вопросам миграции МВД России по г. о. Подольск Московской области."@ru ;
+    :hasAddress :address-mvd-podolsk .
+
+:org-mvd-moscow a :Organization ;
+    rdfs:label "УВМ МВД России по г. Москве"@ru ;
+    rdfs:comment "Управление по вопросам миграции МВД России по г. Москве."@ru ;
+    :hasAddress :address-mvd-moscow .
+
+:address-mvd-podolsk a :Address ;
+    :region "50" ;
+    rdfs:label "Адрес ОВМ Подольск"@ru .
+
+:address-mvd-moscow a :Address ;
+    :region "77" ;
+    rdfs:label "Адрес УВМ Москва"@ru .
+
+# =============================================================================
+# 6. ОГРАНИЧЕНИЯ ЦЕЛОСТНОСТИ (для тестов SHACL/OWL2RL)
+# =============================================================================
+
+# Каждый экземпляр Registration должен иметь дату начала (инвариант SS-1)
+:Registration rdfs:subClassOf [
+    a owl:Restriction ;
+    owl:onProperty :startDate ;
+    owl:qualifiedCardinality "1"^^xsd:nonNegativeInteger ;
+    owl:onDataRange xsd:date ;
+    rdfs:comment "Инвариант SS-1: у каждой регистрации есть ровно одна дата начала."@ru
+] .
+
+# Каждый экземпляр Person должен иметь ФИО (инвариант SS-2)
+:Person rdfs:subClassOf [
+    a owl:Restriction ;
+    owl:onProperty :fullName ;
+    owl:minCardinality "1"^^xsd:nonNegativeInteger ;
+    rdfs:comment "Инвариант SS-2: у каждого физического лица есть ФИО."@ru
+] .
+
+# Каждый экземпляр Address должен иметь код региона (инвариант SS-2)
+:Address rdfs:subClassOf [
+    a owl:Restriction ;
+    owl:onProperty :region ;
+    owl:minCardinality "1"^^xsd:nonNegativeInteger ;
+    rdfs:comment "Инвариант SS-2: у каждого адреса есть код региона."@ru
+] .
+
+# ============================================================================
+# Конец файла ontology-a.owl
+# Сводка: 5 классов, 5 объектных свойств (4 основных + 1 обратное),
+# 5 свойств данных (3 основных + 2 вспомогательных), 5 ограничений, 12 индивидов.
+# ============================================================================

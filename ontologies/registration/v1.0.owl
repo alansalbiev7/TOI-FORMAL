@@ -1,0 +1,262 @@
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix dct: <http://purl.org/dc/terms/> .
+@prefix reg: <https://smev.ru/ontologies/registration/v1.0#> .
+
+# =============================================================================
+# Онтология «Регистрация по месту жительства»
+# Домен: классическая государственная услуга РФ (паспортно-визовая служба,
+#        МВД России, ФГБУ «ПВС МВД России»).
+# Назначение: формализация понятий предметной области для использования
+#             в Adaptive Semantic Gateway (ASG / АСШ) при межведомственном
+#             обмене данными через СМЭВ.
+# Версия: 1.0
+# =============================================================================
+
+<https://smev.ru/ontologies/registration/v1.0> a owl:Ontology ;
+  dct:title "Онтология регистрации по месту жительства"@ru ;
+  dct:title "Residence Registration Ontology"@en ;
+  dct:creator "ASG Pilot Team (СМЭВ / МВД России)"@ru ;
+  dct:creator "ASG Pilot Team (SMEV / MVD of Russia)"@en ;
+  dct:description "OWL 2 DL-онтология, описывающая понятия предметной области государственной услуги «Регистрация по месту жительства». Содержит классы Person, Resident, NonResident, RegistrationRecord, Address, ResidenceType и GovernmentBody, а также связанные объектные и датные свойства, ограничения и индивиды."@ru ;
+  rdfs:comment "Онтология пилотного домена ASG. Определяет семантическую модель данных для услуги регистрации по месту жительства в соответствии с Федеральным законом № 5242-1 от 25.06.1993 «О праве граждан Российской Федерации на свободу передвижения, выбор места пребывания и жительства в пределах Российской Федерации»."@ru ;
+  owl:versionInfo "1.0" ;
+  owl:imports <http://www.w3.org/ns/shacl#> .
+
+# -----------------------------------------------------------------------------
+# Пользовательские типы данных (datatypes с фасетами xsd:pattern)
+# -----------------------------------------------------------------------------
+
+# ИНН физического лица — 12 цифр (ФНС РФ). Фасет pattern гарантирует структуру.
+reg:Inn12DigitString a rdfs:Datatype ;
+  owl:onDatatype xsd:string ;
+  owl:withRestrictions (
+    [ xsd:pattern "^[0-9]{12}$" ]
+  ) ;
+  rdfs:label "ИНН физического лица (12 цифр)"@ru ;
+  rdfs:comment "Строковое представление ИНН физического лица — ровно 12 арабских цифр в соответствии с приказом ФНС России от 30.09.2022 № ЕД-7-14/927@."@ru .
+
+# СНИЛС — 11 цифр в формате «XXX-XXX-XXX YY» (без дефиса в строке — 11 цифр).
+reg:Snils11DigitString a rdfs:Datatype ;
+  owl:onDatatype xsd:string ;
+  owl:withRestrictions (
+    [ xsd:pattern "^[0-9]{11}$" ]
+  ) ;
+  rdfs:label "СНИЛС (11 цифр)"@ru ;
+  rdfs:comment "Строковое представление страхового номера индивидуального лицевого счёта (СНИЛС) — 11 цифр в соответствии с Федеральным законом № 27-ФЗ от 01.04.1996 «Об индивидуальном (персонифицированном) учёте в системе обязательного пенсионного страхования»."@ru .
+
+# -----------------------------------------------------------------------------
+# Классы (Class)
+# -----------------------------------------------------------------------------
+
+reg:Person a owl:Class ;
+  rdfs:subClassOf owl:Thing ;
+  rdfs:label "Физическое лицо"@ru ,
+             "Person"@en ;
+  rdfs:comment "Человек — субъект права, в отношении которого осуществляется государственная услуга регистрации по месту жительства. Идентифицируется по ФИО, дате рождения, ИНН и СНИЛС."@ru .
+
+reg:Resident a owl:Class ;
+  # reg:Resident ⊑ reg:Person ⊓ ∃ reg:hasRegistration.⊤
+  rdfs:subClassOf reg:Person ,
+    [ a owl:Restriction ;
+      owl:onProperty reg:hasRegistration ;
+      owl:someValuesFrom owl:Thing
+    ] ;
+  rdfs:label "Зарегистрированный по месту жительства"@ru ,
+             "Resident (registered)"@en ;
+  rdfs:comment "Физическое лицо, имеющее действующую запись о регистрации по месту жительства (то есть лицо, для которого существует хотя бы один объект reg:RegistrationRecord, связанный свойством reg:hasRegistration)."@ru .
+
+reg:NonResident a owl:Class ;
+  # reg:NonResident ≡ reg:Person ⊓ ¬∃ reg:hasRegistration.⊤
+  owl:equivalentClass [
+    a owl:Class ;
+    owl:intersectionOf (
+      reg:Person
+      [ a owl:Restriction ;
+        owl:onProperty reg:hasRegistration ;
+        owl:cardinality 0
+      ]
+    )
+  ] ;
+  rdfs:subClassOf reg:Person ;
+  rdfs:label "Не зарегистрированный по месту жительства"@ru ,
+             "Non-resident"@en ;
+  rdfs:comment "Физическое лицо, не имеющее ни одной действующей записи о регистрации по месту жительства. Логически определяется как пересечение Person и ограничения «не существует объекта reg:hasRegistration»."@ru .
+
+# Resident и NonResident попарно несовместимы (никто не может быть одновременно
+# зарегистрированным и незарегистрированным по одному и тому же основанию).
+reg:Resident owl:disjointWith reg:NonResident .
+
+reg:RegistrationRecord a owl:Class ;
+  rdfs:label "Запись о регистрации"@ru ,
+             "Registration record"@en ;
+  rdfs:comment "Официальная запись о регистрации физического лица по месту жительства. Содержит дату регистрации, адрес и тип жилья. Каждая запись выдаётся уполномоченным государственным органом (reg:GovernmentBody)."@ru .
+
+reg:Address a owl:Class ;
+  rdfs:label "Адрес места жительства"@ru ,
+             "Address"@en ;
+  rdfs:comment "Адрес регистрации физического лица. Структурируется в соответствии с ФИАС (Федеральная информационная адресная система). Связан с типом жилья (reg:ResidenceType)."@ru .
+
+reg:ResidenceType a owl:Class ;
+  rdfs:label "Тип жилья"@ru ,
+             "Residence type"@en ;
+  rdfs:comment "Классификатор типов жилых помещений: квартира, индивидуальный жилой дом, общежитие. Экземплярами класса являются конкретные значения классификатора."@ru .
+
+reg:GovernmentBody a owl:Class ;
+  rdfs:label "Государственный орган"@ru ,
+             "Government body"@en ;
+  rdfs:comment "Уполномоченный орган государственной власти, имеющий право выдавать и аннулировать записи о регистрации по месту жительства. В РФ — территориальные органы МВД России (паспортно-визовые подразделения)."@ru .
+
+# -----------------------------------------------------------------------------
+# Объектные свойства (ObjectProperty)
+# -----------------------------------------------------------------------------
+
+reg:hasRegistration a owl:ObjectProperty ;
+  rdfs:domain reg:Person ;
+  rdfs:range reg:RegistrationRecord ;
+  rdfs:label "имеет регистрацию"@ru ,
+             "has registration"@en ;
+  rdfs:comment "Связывает физическое лицо с записью о его регистрации по месту жительства. Одно лицо может иметь несколько регистраций (исторически), но только одну действующую на текущую дату."@ru .
+
+reg:registeredAt a owl:ObjectProperty ,
+                  owl:FunctionalProperty ;
+  rdfs:domain reg:RegistrationRecord ;
+  rdfs:range reg:Address ;
+  rdfs:label "зарегистрирован по адресу"@ru ,
+             "registered at"@en ;
+  rdfs:comment "Связывает запись о регистрации с конкретным адресом. Каждая запись имеет ровно один адрес (functional property)."@ru .
+
+reg:hasResidenceType a owl:ObjectProperty ,
+                      owl:FunctionalProperty ;
+  rdfs:domain reg:Address ;
+  rdfs:range reg:ResidenceType ;
+  rdfs:label "имеет тип жилья"@ru ,
+             "has residence type"@en ;
+  rdfs:comment "Связывает адрес с типом жилья (квартира / дом / общежитие). Для одного адреса задаётся единственный тип жилья."@ru .
+
+reg:issuedBy a owl:ObjectProperty ,
+              owl:FunctionalProperty ;
+  rdfs:domain reg:RegistrationRecord ;
+  rdfs:range reg:GovernmentBody ;
+  rdfs:label "выдан органом"@ru ,
+             "issued by"@en ;
+  rdfs:comment "Связывает запись о регистрации с государственным органом, её выдавшим. Используется для подотчётности и аудита (provenance) при межведомственном обмене."@ru .
+
+# -----------------------------------------------------------------------------
+# Датные свойства (DatatypeProperty)
+# -----------------------------------------------------------------------------
+
+reg:fullName a owl:DatatypeProperty ,
+              owl:FunctionalProperty ;
+  rdfs:domain reg:Person ;
+  rdfs:range xsd:string ;
+  rdfs:label "ФИО"@ru ,
+             "full name"@en ;
+  rdfs:comment "Полное наименование физического лица: фамилия, имя, отчество (при наличии). Формат соответствует Приложению № 1 к Регламенту МВД по регистрационному учёту."@ru .
+
+reg:birthDate a owl:DatatypeProperty ,
+               owl:FunctionalProperty ;
+  rdfs:domain reg:Person ;
+  rdfs:range xsd:date ;
+  rdfs:label "дата рождения"@ru ,
+             "birth date"@en ;
+  rdfs:comment "Дата рождения физического лица в формате xsd:date (ГГГГ-ММ-ДД)."@ru .
+
+reg:inn a owl:DatatypeProperty ,
+         owl:FunctionalProperty ;
+  rdfs:domain reg:Person ;
+  rdfs:range reg:Inn12DigitString ;
+  rdfs:label "ИНН"@ru ,
+             "INN"@en ;
+  rdfs:comment "Идентификационный номер налогоплательщика (физическое лицо). Состоит ровно из 12 арабских цифр. Является ключевым атрибутом для межведомственного сопоставления персон (см. cross-domain-mapping.ttl)."@ru .
+
+reg:snils a owl:DatatypeProperty ,
+           owl:FunctionalProperty ;
+  rdfs:domain reg:Person ;
+  rdfs:range reg:Snils11DigitString ;
+  rdfs:label "СНИЛС"@ru ,
+             "SNILS"@en ;
+  rdfs:comment "Страховой номер индивидуального лицевого счёта. Состоит ровно из 11 арабских цифр (без дефисов и контрольных разделителей)."@ru .
+
+reg:registrationDate a owl:DatatypeProperty ,
+                       owl:FunctionalProperty ;
+  rdfs:domain reg:RegistrationRecord ;
+  rdfs:range xsd:date ;
+  rdfs:label "дата регистрации"@ru ,
+             "registration date"@en ;
+  rdfs:comment "Дата, с которой физическое лицо считается зарегистрированным по указанному адресу. Формат xsd:date (ГГГГ-ММ-ДД)."@ru .
+
+reg:addressLine a owl:DatatypeProperty ;
+  rdfs:domain reg:Address ;
+  rdfs:range xsd:string ;
+  rdfs:label "строка адреса"@ru ,
+             "address line"@en ;
+  rdfs:comment "Полное текстовое представление адреса (по ФИАС) в одну строку. Используется для отображения пользователю и для поиска."@ru .
+
+reg:apartmentNumber a owl:DatatypeProperty ;
+  rdfs:domain reg:Address ;
+  rdfs:range xsd:positiveInteger ;
+  rdfs:label "номер квартиры"@ru ,
+             "apartment number"@en ;
+  rdfs:comment "Номер квартиры (или комнаты в общежитии). Целое положительное число. Отсутствует для индивидуальных жилых домов."@ru .
+
+# -----------------------------------------------------------------------------
+# Индивиды (Individuals) — значения перечислимого типа ResidenceType
+# -----------------------------------------------------------------------------
+
+reg:Apartment a reg:ResidenceType , owl:NamedIndividual ;
+  rdfs:label "Квартира"@ru ,
+             "Apartment"@en ;
+  rdfs:comment "Тип жилья: отдельная квартира в многоквартирном жилом доме."@ru .
+
+reg:House a reg:ResidenceType , owl:NamedIndividual ;
+  rdfs:label "Индивидуальный жилой дом"@ru ,
+             "Individual house"@en ;
+  rdfs:comment "Тип жилья: индивидуальный (частный) жилой дом. Номер квартиры обычно отсутствует."@ru .
+
+reg:Dormitory a reg:ResidenceType , owl:NamedIndividual ;
+  rdfs:label "Общежитие"@ru ,
+             "Dormitory"@en ;
+  rdfs:comment "Тип жилья: комната в общежитии (коридорная, секционная или квартирного типа)."@ru .
+
+# ResidenceType должен быть перечислимым классом из этих трёх значений.
+# Декларация через owl:oneOf (дискретный набор индивидов).
+reg:ResidenceType owl:equivalentClass [
+  a owl:Class ;
+  owl:oneOf ( reg:Apartment reg:House reg:Dormitory )
+] .
+
+# Все индивиды ResidenceType попарно различны (owl:AllDifferent).
+[ a owl:AllDifferent ;
+  owl:distinctMembers ( reg:Apartment reg:House reg:Dormitory )
+] .
+
+# -----------------------------------------------------------------------------
+# Дополнительные ограничения целостности
+# -----------------------------------------------------------------------------
+
+# Каждая RegistrationRecord обязана иметь ровно один адрес (registeredAt),
+# ровно одну дату регистрации (registrationDate) и ровно один орган (issuedBy).
+reg:RegistrationRecord rdfs:subClassOf
+  [ a owl:Restriction ; owl:onProperty reg:registeredAt     ; owl:qualifiedCardinality "1"^^xsd:nonNegativeInteger ; owl:onClass reg:Address ] ,
+  [ a owl:Restriction ; owl:onProperty reg:issuedBy          ; owl:qualifiedCardinality "1"^^xsd:nonNegativeInteger ; owl:onClass reg:GovernmentBody ] ,
+  [ a owl:Restriction ; owl:onProperty reg:registrationDate  ; owl:qualifiedCardinality "1"^^xsd:nonNegativeInteger ; owl:onDataRange xsd:date ] .
+
+# Каждый Address обязан иметь тип жилья (min 1) и хотя бы строку адреса.
+reg:Address rdfs:subClassOf
+  [ a owl:Restriction ; owl:onProperty reg:hasResidenceType ; owl:qualifiedMinCardinality "1"^^xsd:nonNegativeInteger ; owl:onClass reg:ResidenceType ] ,
+  [ a owl:Restriction ; owl:onProperty reg:addressLine      ; owl:minCardinality "1"^^xsd:nonNegativeInteger ] .
+
+# Person обязан иметь ФИО и дату рождения; ИНН и СНИЛС крайне желательны
+# (но допускаются NULL для иностранных граждан без этих идентификаторов).
+reg:Person rdfs:subClassOf
+  [ a owl:Restriction ; owl:onProperty reg:fullName   ; owl:qualifiedCardinality "1"^^xsd:nonNegativeInteger ; owl:onDataRange xsd:string ] ,
+  [ a owl:Restriction ; owl:onProperty reg:birthDate   ; owl:qualifiedCardinality "1"^^xsd:nonNegativeInteger ; owl:onDataRange xsd:date ] ,
+  [ a owl:Restriction ; owl:onProperty reg:inn         ; owl:maxCardinality "1"^^xsd:nonNegativeInteger ] ,
+  [ a owl:Restriction ; owl:onProperty reg:snils       ; owl:maxCardinality "1"^^xsd:nonNegativeInteger ] .
+
+# =============================================================================
+# Конец файла.
+# =============================================================================

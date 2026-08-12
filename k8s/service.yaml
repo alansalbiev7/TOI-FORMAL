@@ -1,0 +1,90 @@
+# k8s/service.yaml — сервисы ASG Core
+# ClusterIP для REST (8080) + headless-сервис для gRPC (9090, необходимо для client-side LB).
+# ─────────────────────────────────────────────────────────────────────────────
+---
+# REST: обычный ClusterIP — балансировка через kube-proxy (iptables/IPVS)
+apiVersion: v1
+kind: Service
+metadata:
+  name: asg-core
+  namespace: asg-system
+  labels:
+    app.kubernetes.io/name: asg
+    app.kubernetes.io/component: core
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: asg
+    app.kubernetes.io/component: core
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      protocol: TCP
+      appProtocol: http
+    - name: grpc
+      port: 9090
+      targetPort: 9090
+      protocol: TCP
+      appProtocol: grpc
+  internalTrafficPolicy: Cluster
+  sessionAffinity: None
+---
+# Headless-сервис для gRPC client-side load balancing (gRPC требует DNS round-robin).
+# ClusterIP: None — клиент сам выбирает эндпоинт из A-записей.
+apiVersion: v1
+kind: Service
+metadata:
+  name: asg-core-grpc
+  namespace: asg-system
+  labels:
+    app.kubernetes.io/name: asg
+    app.kubernetes.io/component: core
+    asg/transport: grpc
+spec:
+  type: ClusterIP
+  clusterIP: None          # headless
+  selector:
+    app.kubernetes.io/name: asg
+    app.kubernetes.io/component: core
+  ports:
+    - name: grpc
+      port: 9090
+      targetPort: 9090
+      protocol: TCP
+      appProtocol: grpc
+  publishNotReadyAddresses: false
+---
+# ServiceAccount + RBAC для чтения узла (используется для топологии трейсов)
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: asg-core
+  namespace: asg-system
+  labels:
+    app.kubernetes.io/name: asg
+---
+# Role: минимальные права — чтение подов в своём namespace (для graceful shutdown)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: asg-core
+  namespace: asg-system
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: asg-core
+  namespace: asg-system
+subjects:
+  - kind: ServiceAccount
+    name: asg-core
+    namespace: asg-system
+roleRef:
+  kind: Role
+  name: asg-core
+  apiGroup: rbac.authorization.k8s.io

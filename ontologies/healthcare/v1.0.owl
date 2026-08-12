@@ -1,0 +1,287 @@
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix dct: <http://purl.org/dc/terms/> .
+@prefix health: <https://smev.ru/ontologies/healthcare/v1.0#> .
+
+# =============================================================================
+# Онтология «Единая государственная информационная система здравоохранения»
+# Домен: ЕГИСЗ (Федеральный закон № 242-ФЗ от 21.11.2011).
+# Назначение: формализация понятий медицинской предметной области для
+#             Adaptive Semantic Gateway (ASG / АСШ) при межведомственном
+#             обмене медицинскими данными через СМЭВ.
+# Версия: 1.0
+# =============================================================================
+
+<https://smev.ru/ontologies/healthcare/v1.0> a owl:Ontology ;
+  dct:title "Онтология ЕГИСЗ (здравоохранение)"@ru ;
+  dct:title "Healthcare Ontology (Unified State Health Information System)"@en ;
+  dct:creator "ASG Pilot Team (Минздрав России / СМЭВ)"@ru ;
+  dct:creator "ASG Pilot Team (Minzdrav of Russia / SMEV)"@en ;
+  dct:description "OWL 2 DL-онтология, описывающая понятия медицинской предметной области: пациент, врач, медицинская карта, диагноз, лечение, назначение, медицинская организация, лекарственный препарат, страховой полис ОМС. Содержит объектные и датные свойства, ограничения OWL 2 и семантические метки (rdfs:label, rdfs:comment) на русском языке."@ru ;
+  rdfs:comment "Онтология пилотного домена ASG. Соответствует Федеральному закону № 242-ФЗ от 21.11.2011 «Об основах охраны здоровья граждан в Российской Федерации» и приказу Минздрава России № 946н от 30.12.2020 о Единой государственной информационной системе здравоохранения (ЕГИСЗ)."@ru ;
+  owl:versionInfo "1.0" .
+
+# -----------------------------------------------------------------------------
+# Пользовательские типы данных (datatypes с фасетами)
+# -----------------------------------------------------------------------------
+
+# Полис ОМС — единый номер полиса ОМС (ЕНП), 16 цифр (старый формат) или
+# временный (16 цифр). Используется универсальный формат 16 цифр.
+health:OmPolicyNumberString a rdfs:Datatype ;
+  owl:onDatatype xsd:string ;
+  owl:withRestrictions (
+    [ xsd:pattern "^[0-9]{16}$" ]
+  ) ;
+  rdfs:label "Номер полиса ОМС (16 цифр)"@ru ;
+  rdfs:comment "Единый номер полиса обязательного медицинского страхования (ЕНП ОМС) — 16 арабских цифр (приказ ФФОМС от 28.09.2018 № 200)."@ru .
+
+# ИНН физического лица — 12 цифр (та же семантика, что и в reg:ontology).
+health:Inn12DigitString a rdfs:Datatype ;
+  owl:onDatatype xsd:string ;
+  owl:withRestrictions (
+    [ xsd:pattern "^[0-9]{12}$" ]
+  ) ;
+  rdfs:label "ИНН физического лица (12 цифр)"@ru ;
+  rdfs:comment "Идентификационный номер налогоплательщика (физлицо) — 12 цифр (см. приказ ФНС России № ЕД-7-14/927@ от 30.09.2022)."@ru .
+
+# СНИЛС — 11 цифр.
+health:Snils11DigitString a rdfs:Datatype ;
+  owl:onDatatype xsd:string ;
+  owl:withRestrictions (
+    [ xsd:pattern "^[0-9]{11}$" ]
+  ) ;
+  rdfs:label "СНИЛС (11 цифр)"@ru ;
+  rdfs:comment "Страховой номер индивидуального лицевого счёта — 11 цифр (ФЗ № 27-ФЗ от 01.04.1996)."@ru .
+
+# Код МКБ-10 — международный буквенно-цифровой код диагноза.
+health:Icd10CodeString a rdfs:Datatype ;
+  owl:onDatatype xsd:string ;
+  owl:withRestrictions (
+    [ xsd:pattern "^[A-Z][0-9]{2}(\\.[0-9A-Z]{1,4})?$" ]
+  ) ;
+  rdfs:label "Код МКБ-10"@ru ;
+  rdfs:comment "Код диагноза по Международной статистической классификации болезней и проблем, связанных со здоровьем, 10-го пересмотра (МКБ-10, WHO ICD-10). Формат: буква + 2 цифры + необязательная подрубрика (точка + 1-4 символа)."@ru .
+
+# -----------------------------------------------------------------------------
+# Классы
+# -----------------------------------------------------------------------------
+
+health:Patient a owl:Class ;
+  # Patient ⊑ ∃ hasPolicy.⊤
+  rdfs:subClassOf
+    [ a owl:Restriction ;
+      owl:onProperty health:hasPolicy ;
+      owl:someValuesFrom owl:Thing
+    ] ;
+  rdfs:label "Пациент"@ru ,
+             "Patient"@en ;
+  rdfs:comment "Физическое лицо, получающее или получавшее медицинскую помощь в медицинской организации. Каждый пациент обязан иметь страховой полис (ОМС/ДМС) — ограничение ∃ hasPolicy.⊤."@ru .
+
+health:Doctor a owl:Class ;
+  # Doctor ⊑ ∃ worksAt.MedicalOrganization
+  rdfs:subClassOf
+    [ a owl:Restriction ;
+      owl:onProperty health:worksAt ;
+      owl:someValuesFrom health:MedicalOrganization
+    ] ;
+  rdfs:label "Врач"@ru ,
+             "Doctor"@en ;
+  rdfs:comment "Медицинский работник с высшим медицинским образованием, имеющий право на осуществление медицинской деятельности. Каждый врач обязан быть трудоустроен хотя бы в одной медицинской организации."@ru .
+
+health:MedicalRecord a owl:Class ;
+  rdfs:label "Медицинская карта"@ru ,
+             "Medical record"@en ;
+  rdfs:comment "Электронная медицинская карта пациента (ЭМК) в ЕГИСЗ. Содержит историю обращений, диагнозы, лечения и назначения."@ru .
+
+health:Diagnosis a owl:Class ;
+  rdfs:label "Диагноз"@ru ,
+             "Diagnosis"@en ;
+  rdfs:comment "Установленный пациенту диагноз. Кодируется по МКБ-10 (health:icd10Code)."@ru .
+
+health:Treatment a owl:Class ;
+  rdfs:label "Лечение"@ru ,
+             "Treatment"@en ;
+  rdfs:comment "Курс лечения, назначенный пациенту по установленному диагнозу. Включает одно или несколько назначений (health:Prescription)."@ru .
+
+health:Prescription a owl:Class ;
+  rdfs:label "Назначение (рецепт)"@ru ,
+             "Prescription"@en ;
+  rdfs:comment "Назначение лекарственного препарата пациенту: препарат, дозировка в миллиграммах, кратность и длительность приёма. Соответствует приказу Минздрава России № 1094н от 24.11.2021 о порядке назначения лекарственных препаратов."@ru .
+
+health:MedicalOrganization a owl:Class ;
+  rdfs:label "Медицинская организация"@ru ,
+             "Medical organization"@en ;
+  rdfs:comment "Юридическое лицо независимо от организационно-правовой формы, осуществляющее медицинскую деятельность на основании лицензии (ст. 2 ФЗ № 323-ФЗ от 21.11.2011)."@ru .
+
+health:Medication a owl:Class ;
+  rdfs:label "Лекарственный препарат"@ru ,
+             "Medication"@en ;
+  rdfs:comment "Лекарственный препарат, зарегистрированный в Государственном реестре лекарственных средств (ГРЛС) Минздрава России."@ru .
+
+health:InsurancePolicy a owl:Class ;
+  rdfs:label "Страховой полис"@ru ,
+             "Insurance policy"@en ;
+  rdfs:comment "Полис обязательного (ОМС) или добровольного (ДМС) медицинского страхования. Имеет уникальный 16-значный номер ЕНП для ОМС."@ru .
+
+# Patient и Doctor — попарно несовместимые роли одного и того же физлица
+# в контексте одного медицинского случая (нельзя лечить самого себя).
+health:Patient owl:disjointWith health:Doctor .
+
+# -----------------------------------------------------------------------------
+# Объектные свойства
+# -----------------------------------------------------------------------------
+
+health:hasPatient a owl:ObjectProperty ;
+  rdfs:domain health:MedicalRecord ;
+  rdfs:range health:Patient ;
+  rdfs:label "содержит данные пациента"@ru ,
+             "has patient"@en ;
+  rdfs:comment "Связывает медицинскую карту с пациентом, к которому относится эта карта. У одной карты — ровно один пациент."@ru .
+
+health:hasDoctor a owl:ObjectProperty ;
+  rdfs:domain health:MedicalRecord ;
+  rdfs:range health:Doctor ;
+  rdfs:label "лечащий врач"@ru ,
+             "has doctor"@en ;
+  rdfs:comment "Связывает медицинскую карту с лечащим врачом. У одной карты может быть несколько врачей (если они ведут пациента совместно)."@ru .
+
+health:hasDiagnosis a owl:ObjectProperty ;
+  rdfs:domain health:MedicalRecord ;
+  rdfs:range health:Diagnosis ;
+  rdfs:label "содержит диагноз"@ru ,
+             "has diagnosis"@en ;
+  rdfs:comment "Связывает медицинскую карту с одним или несколькими диагнозами, установленными пациенту."@ru .
+
+health:prescribedTreatment a owl:ObjectProperty ;
+  rdfs:domain health:Diagnosis ;
+  rdfs:range health:Treatment ;
+  rdfs:label "назначенное лечение"@ru ,
+             "prescribed treatment"@en ;
+  rdfs:comment "Связывает установленный диагноз с курсом лечения, назначенным по этому диагнозу."@ru .
+
+health:prescribedMedication a owl:ObjectProperty ;
+  rdfs:domain health:Prescription ;
+  rdfs:range health:Medication ;
+  rdfs:label "назначенный препарат"@ru ,
+             "prescribed medication"@en ;
+  rdfs:comment "Связывает назначение (рецепт) с конкретным лекарственным препаратом из ГРЛС."@ru .
+
+health:worksAt a owl:ObjectProperty ;
+  rdfs:domain health:Doctor ;
+  rdfs:range health:MedicalOrganization ;
+  rdfs:label "работает в"@ru ,
+             "works at"@en ;
+  rdfs:comment "Связывает врача с медицинской организацией, в которой он работает. Один врач может работать в нескольких организациях (внешнее совместительство)."@ru .
+
+health:hasPolicy a owl:ObjectProperty ,
+                  owl:FunctionalProperty ;
+  rdfs:domain health:Patient ;
+  rdfs:range health:InsurancePolicy ;
+  rdfs:label "имеет полис"@ru ,
+             "has policy"@en ;
+  rdfs:comment "Связывает пациента с его страховым полисом. Один пациент имеет один действующий полис ОМС (functional property)."@ru .
+
+health:containsPrescription a owl:ObjectProperty ;
+  rdfs:domain health:Treatment ;
+  rdfs:range health:Prescription ;
+  rdfs:label "содержит назначение"@ru ,
+             "contains prescription"@en ;
+  rdfs:comment "Связывает курс лечения с одним или несколькими назначениями (рецептами), входящими в этот курс."@ru .
+
+# -----------------------------------------------------------------------------
+# Датные свойства
+# -----------------------------------------------------------------------------
+
+health:fullName a owl:DatatypeProperty ,
+                 owl:FunctionalProperty ;
+  rdfs:domain [ a owl:Class ; owl:unionOf ( health:Patient health:Doctor ) ] ;
+  rdfs:range xsd:string ;
+  rdfs:label "ФИО"@ru ,
+             "full name"@en ;
+  rdfs:comment "Полное наименование физического лица (фамилия, имя, отчество) — для пациента или для врача."@ru .
+
+health:birthDate a owl:DatatypeProperty ,
+                  owl:FunctionalProperty ;
+  rdfs:domain health:Patient ;
+  rdfs:range xsd:date ;
+  rdfs:label "дата рождения"@ru ,
+             "birth date"@en ;
+  rdfs:comment "Дата рождения пациента. Формат xsd:date (ГГГГ-ММ-ДД)."@ru .
+
+health:policyNumber a owl:DatatypeProperty ,
+                     owl:FunctionalProperty ;
+  rdfs:domain health:InsurancePolicy ;
+  rdfs:range health:OmPolicyNumberString ;
+  rdfs:label "номер полиса ОМС"@ru ,
+             "OMS policy number"@en ;
+  rdfs:comment "Единый номер полиса ОМС (ЕНП) — 16 цифр. Используется для межведомственного сопоставления персон."@ru .
+
+health:inn a owl:DatatypeProperty ,
+            owl:FunctionalProperty ;
+  rdfs:domain [ a owl:Class ; owl:unionOf ( health:Patient health:Doctor ) ] ;
+  rdfs:range health:Inn12DigitString ;
+  rdfs:label "ИНН"@ru ,
+             "INN"@en ;
+  rdfs:comment "Идентификационный номер налогоплательщика — 12 цифр для физлица. Используется как ключ междоменного сопоставления (см. cross-domain-mapping.ttl)."@ru .
+
+health:snils a owl:DatatypeProperty ,
+              owl:FunctionalProperty ;
+  rdfs:domain health:Patient ;
+  rdfs:range health:Snils11DigitString ;
+  rdfs:label "СНИЛС"@ru ,
+             "SNILS"@en ;
+  rdfs:comment "Страховой номер индивидуального лицевого счёта — 11 цифр."@ru .
+
+health:icd10Code a owl:DatatypeProperty ,
+                  owl:FunctionalProperty ;
+  rdfs:domain health:Diagnosis ;
+  rdfs:range health:Icd10CodeString ;
+  rdfs:label "код МКБ-10"@ru ,
+             "ICD-10 code"@en ;
+  rdfs:comment "Код диагноза по МКБ-10 (буква + 2 цифры + необязательная подрубрика через точку)."@ru .
+
+health:dosageMg a owl:DatatypeProperty ;
+  rdfs:domain health:Prescription ;
+  rdfs:range xsd:positiveInteger ;
+  rdfs:label "дозировка (мг)"@ru ,
+             "dosage (mg)"@en ;
+  rdfs:comment "Дозировка назначенного препарата в миллиграммах на один приём. Целое положительное число."@ru .
+
+# -----------------------------------------------------------------------------
+# Дополнительные ограничения целостности
+# -----------------------------------------------------------------------------
+
+# MedicalRecord обязан иметь ровно одного пациента и хотя бы одного врача.
+health:MedicalRecord rdfs:subClassOf
+  [ a owl:Restriction ; owl:onProperty health:hasPatient ; owl:qualifiedCardinality "1"^^xsd:nonNegativeInteger ; owl:onClass health:Patient ] ,
+  [ a owl:Restriction ; owl:onProperty health:hasDoctor  ; owl:qualifiedMinCardinality "1"^^xsd:nonNegativeInteger ; owl:onClass health:Doctor ] ,
+  [ a owl:Restriction ; owl:onProperty health:hasDiagnosis ; owl:qualifiedMinCardinality "0"^^xsd:nonNegativeInteger ; owl:onClass health:Diagnosis ] .
+
+# Prescription обязан содержать ровно один препарат и одну дозировку.
+health:Prescription rdfs:subClassOf
+  [ a owl:Restriction ; owl:onProperty health:prescribedMedication ; owl:qualifiedCardinality "1"^^xsd:nonNegativeInteger ; owl:onClass health:Medication ] ,
+  [ a owl:Restriction ; owl:onProperty health:dosageMg              ; owl:qualifiedCardinality "1"^^xsd:nonNegativeInteger ; owl:onDataRange xsd:positiveInteger ] .
+
+# Diagnosis обязан иметь код МКБ-10.
+health:Diagnosis rdfs:subClassOf
+  [ a owl:Restriction ; owl:onProperty health:icd10Code ; owl:qualifiedCardinality "1"^^xsd:nonNegativeInteger ; owl:onDataRange health:Icd10CodeString ] .
+
+# Doctor обязан иметь ФИО.
+health:Doctor rdfs:subClassOf
+  [ a owl:Restriction ; owl:onProperty health:fullName ; owl:qualifiedCardinality "1"^^xsd:nonNegativeInteger ; owl:onDataRange xsd:string ] .
+
+# Patient обязан иметь ФИО, дату рождения и ровно один полис.
+health:Patient rdfs:subClassOf
+  [ a owl:Restriction ; owl:onProperty health:fullName   ; owl:qualifiedCardinality "1"^^xsd:nonNegativeInteger ; owl:onDataRange xsd:string ] ,
+  [ a owl:Restriction ; owl:onProperty health:birthDate   ; owl:qualifiedCardinality "1"^^xsd:nonNegativeInteger ; owl:onDataRange xsd:date ] ,
+  [ a owl:Restriction ; owl:onProperty health:hasPolicy   ; owl:qualifiedCardinality "1"^^xsd:nonNegativeInteger ; owl:onClass health:InsurancePolicy ] .
+
+# InsurancePolicy обязан иметь номер полиса.
+health:InsurancePolicy rdfs:subClassOf
+  [ a owl:Restriction ; owl:onProperty health:policyNumber ; owl:qualifiedCardinality "1"^^xsd:nonNegativeInteger ; owl:onDataRange health:OmPolicyNumberString ] .
+
+# =============================================================================
+# Конец файла.
+# =============================================================================

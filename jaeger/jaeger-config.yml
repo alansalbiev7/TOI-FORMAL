@@ -1,0 +1,113 @@
+# =============================================================================
+# jaeger-config.yml — конфигурация Jaeger all-in-one для ASG
+# -----------------------------------------------------------------------------
+# Все компоненты Jaeger (agent / collector / query / UI) в одном процессе —
+# удобно для dev / staging. Для prod — разворачивать как microservices
+# (separate collector + storage backend).
+#
+# Хранилище: badger (in-process KV на диске) — для dev.
+#   Для prod использовать Elasticsearch / OpenSearch / Cassandra.
+#   См. закомментированный блок ниже.
+#
+# Приём трейсов от asg-core:
+#   - OTLP gRPC :4317 (основной, используется asg.jaeger.otlp-endpoint в HOCON)
+#   - OTLP HTTP :4318
+#   - Zipkin    :9411 (если есть legacy-сервисы)
+#   - Jaeger    :14250 (нативный gRPC протокол Jaeger)
+#
+# Sampling: probabilistic 10% (asg.jaeger.sampler-arg=0.1 в HOCON).
+#   Для prod — adaptive sampling с динамическими стратегиями по сервисам/endpoint'ам.
+# =============================================================================
+
+sampling:
+  # Тип сэмплера: const | probabilistic | ratelimiting | remote
+  # probabilistic — фиксированная вероятность сохранения трейса (10%).
+  type: probabilistic
+  param: 0.1   # 0.0 — не сохранять ничего; 1.0 — сохранять все трейсы
+
+# -----------------------------------------------------------------------------
+# Хранилище span'ов
+# -----------------------------------------------------------------------------
+# Вариант A (dev): badger — embedded KV на диске, не требует внешних зависимостей.
+storage:
+  type: badger
+  badger:
+    ephemeral: false             # false — данные переживают рестарт (persist on disk)
+    directory-key: /badger/key   # каталог для key-таблиц Badger (LSM tree)
+    directory-value: /badger/data # каталог для value-файлов Badger (vLog)
+    truncate: true               # truncate при старте если данные повреждены
+    maintenance-interval: 5m     # периодичность GC-прохода Badger
+
+# Вариант B (prod) — раскомментировать для Elasticsearch / OpenSearch:
+# storage:
+#   type: elasticsearch
+#   elasticsearch:
+#     server-urls: http://elasticsearch:9200
+#     index-prefix: asg-jaeger
+#     tags-as-fields:
+#       all: true                # индексировать теги как поля (быстрее фильтрация)
+#     bulk:
+#       size: 1000
+#       workers: 10
+#       flush-interval: 200ms
+#     username: ${ES_USER}
+#     password: ${ES_PASSWORD}
+#     tls:
+#       enabled: true
+#       ca: /etc/jaeger/tls/ca.crt
+
+# -----------------------------------------------------------------------------
+# Collector — приёмник трейсов (gRPC :14250, OTLP :4317/:4318, Zipkin :9411)
+# -----------------------------------------------------------------------------
+collector:
+  grpc-server:
+    host-port: ":14250"          # нативный Jaeger gRPC (для Jaeger agents)
+  http-server:
+    host-port: ":14268"          # HTTP endpoint /api/traces (для batch-spans)
+  otlp:
+    enabled: true                 # приём OTLP-трейсов от asg-core
+    grpc:
+      host-port: ":4317"          # OTLP gRPC (используется asg.jaeger.otlp-endpoint)
+    http:
+      host-port: ":4318"          # OTLP HTTP (альтернатива для http-only клиентов)
+  zipkin:
+    host-port: ":9411"            # приём Zipkin v2 спанов (legacy-совместимость)
+
+# -----------------------------------------------------------------------------
+# Query / UI — HTTP endpoint для Jaeger UI и Grafana datasource
+# -----------------------------------------------------------------------------
+query:
+  base-path: "/"                  # базовый URL для UI (reverse-proxy-ready)
+  http-server:
+    host-port: ":16686"            # Jaeger UI (главный HTTP endpoint)
+  grpc-server:
+    host-port: ":16685"            # gRPC для запросов (Grafana Jaeger datasource)
+
+# -----------------------------------------------------------------------------
+# Логирование
+# -----------------------------------------------------------------------------
+logging:
+  level: info                      # debug | info | warn | error
+
+# -----------------------------------------------------------------------------
+# Memory limits — для all-in-one в dev (для prod — tunable через ресурсы K8s)
+# -----------------------------------------------------------------------------
+memory-limits:
+  service:
+    max-rss: 1073741824            # 1 GiB — предел RSS памяти процесса
+
+# -----------------------------------------------------------------------------
+# Span storage memory cache — ускоряет повторные запросы в UI
+# -----------------------------------------------------------------------------
+memory:
+  storage:
+    type: memory
+    max-traces: 50000              # держим последние 50к трейсов в памяти (для быстрого UI)
+
+# -----------------------------------------------------------------------------
+# Metrics — экспонируем метрики Jaeger на :14269/metrics (для Prometheus)
+# -----------------------------------------------------------------------------
+metrics:
+  prometheus:
+    server-url: http://0.0.0.0:14269  # /metrics endpoint
+    handler-endpoint: /metrics

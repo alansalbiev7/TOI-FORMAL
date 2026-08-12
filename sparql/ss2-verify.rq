@@ -1,0 +1,67 @@
+# =============================================================================
+# SPARQL-запрос для проверки SS-2' (двустороннего сохранения инконсистентности)
+#
+# Условие: для любого концепта C,
+#   O₁ ⊢ C ≡ ⊥  ⟺  O₂ ⊢ m(C) ≡ ⊥
+#
+# Проверка: для каждого отображения C → m(C) выполняется:
+#   - C несогласован в O₁ (C ≡ owl:Nothing или C не имеет экземпляров)
+#   - m(C) несогласован в O₂
+#   ИЛИ
+#   - C согласован в O₁
+#   - m(C) согласован в O₂
+#
+# Использование:
+#   sparql --data=ontologies/O1.ttl --data=ontologies/O2.ttl \
+#          --data=mappings/m.ttl --query=sparql/ss2-verify.rq
+# =============================================================================
+
+PREFIX rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX owl:  <http://www.w3.org/2002/07/owl#>
+PREFIX xsd:  <http://www.w3.org/2001/XMLSchema#>
+PREFIX toi:  <https://smev.ru/toi/ontology#>
+
+SELECT ?morphism ?C ?mC ?inconsistentInO1 ?inconsistentInO2
+       (IF(?inconsistentInO1 != ?inconsistentInO2, "SS-2' VIOLATION", "OK") AS ?status)
+WHERE {
+  ?morphism a toi:OntologyMorphism .
+
+  # Пара отображения C → m(C)
+  ?morphism toi:hasMapping ?mapC .
+  ?mapC toi:sourceConcept ?C ;
+        toi:targetConcept ?mC .
+
+  # Несогласованность в O₁:
+  #   - C эквивалентно owl:Nothing, ИЛИ
+  #   - C объявлено как owl:Nothing, ИЛИ
+  #   - C не имеет экземпляров в данных
+  OPTIONAL {
+    {
+      ?C owl:equivalentClass owl:Nothing .
+    } UNION {
+      ?C rdfs:subClassOf owl:Nothing .
+    } UNION {
+      FILTER NOT EXISTS { ?instance1 a ?C }
+      ?C a owl:Class .
+    }
+  }
+  BIND((BOUND(?_) || NOT EXISTS { ?instance1 a ?C }) AS ?inconsistentInO1)
+
+  # Несогласованность в O₂:
+  OPTIONAL {
+    {
+      ?mC owl:equivalentClass owl:Nothing .
+    } UNION {
+      ?mC rdfs:subClassOf owl:Nothing .
+    } UNION {
+      FILTER NOT EXISTS { ?instance2 a ?mC }
+      ?mC a owl:Class .
+    }
+  }
+  BIND((BOUND(?_) || NOT EXISTS { ?instance2 a ?mC }) AS ?inconsistentInO2)
+
+  # Фильтр: только нарушения
+  FILTER(?inconsistentInO1 != ?inconsistentInO2)
+}
+ORDER BY ?status ?C

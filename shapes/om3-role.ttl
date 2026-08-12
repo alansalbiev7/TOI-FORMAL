@@ -1,0 +1,142 @@
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix toi: <https://smev.ru/toi/ontology#> .
+
+# =============================================================================
+# SHACL-ограничение OM-3 (сохранение ролевых ограничений)
+#
+# Условие: для любой роли r и концепта C,
+#   m(∃ r.C) = ∃ m(r).m(C)
+#   m(∀ r.C) = ∀ m(r).m(C)
+#
+# В OWL 2:
+#   ∃ r.C кодируется как owl:someValuesFrom
+#   ∀ r.C кодируется как owl:allValuesFrom
+#
+# Проверка: для каждого отображения m(∃ r.C) должно быть
+# m(∃ r.C) = ∃ m(r).m(C) (через someValuesFrom),
+# и аналогично для ∀.
+# =============================================================================
+
+toi:OM3RoleExistsShape a sh:NodeShape ;
+  sh:targetClass toi:OntologyMorphism ;
+  sh:sparql [
+    sh:message "OM-3 (∃) нарушено: m(∃ r.C) ≠ ∃ m(r).m(C)" ;
+    sh:severity sh:Violation ;
+    sh:prefixes <http://example.org/toi/prefixes> ;
+    sh:select """
+      SELECT $this ?r ?C ?mR ?mC ?existsRC ?expectedMExists
+      WHERE {
+        # Отображение роли r → m(r)
+        $this toi:hasRoleMapping ?roleMap .
+        ?roleMap toi:sourceRole ?r ;
+                toi:targetRole ?mR .
+
+        # Отображение концепта C → m(C)
+        $this toi:hasMapping ?mapC .
+        ?mapC toi:sourceConcept ?C ;
+              toi:targetConcept ?mC .
+
+        # ∃ r.C (в OWL 2: owl:someValuesFrom)
+        ?existsRC a owl:Restriction ;
+                  owl:onProperty ?r ;
+                  owl:someValuesFrom ?C .
+
+        # Ожидаемое ∃ m(r).m(C)
+        ?expectedMExists a owl:Restriction ;
+                         owl:onProperty ?mR ;
+                         owl:someValuesFrom ?mC .
+
+        # Фактическое m(∃ r.C)
+        $this toi:hasMapping ?mapExists .
+        ?mapExists toi:sourceConcept ?existsRC ;
+                   toi:targetConcept ?mExists .
+
+        FILTER (?mExists != ?expectedMExists)
+      }
+    """ ;
+  ] .
+
+toi:OM3RoleForallShape a sh:NodeShape ;
+  sh:targetClass toi:OntologyMorphism ;
+  sh:sparql [
+    sh:message "OM-3 (∀) нарушено: m(∀ r.C) ≠ ∀ m(r).m(C)" ;
+    sh:severity sh:Violation ;
+    sh:prefixes <http://example.org/toi/prefixes> ;
+    sh:select """
+      SELECT $this ?r ?C ?mR ?mC ?forallRC ?expectedMForall
+      WHERE {
+        $this toi:hasRoleMapping ?roleMap .
+        ?roleMap toi:sourceRole ?r ;
+                toi:targetRole ?mR .
+
+        $this toi:hasMapping ?mapC .
+        ?mapC toi:sourceConcept ?C ;
+              toi:targetConcept ?mC .
+
+        # ∀ r.C (в OWL 2: owl:allValuesFrom)
+        ?forallRC a owl:Restriction ;
+                  owl:onProperty ?r ;
+                  owl:allValuesFrom ?C .
+
+        # Ожидаемое ∀ m(r).m(C)
+        ?expectedMForall a owl:Restriction ;
+                         owl:onProperty ?mR ;
+                         owl:allValuesFrom ?mC .
+
+        # Фактическое m(∀ r.C)
+        $this toi:hasMapping ?mapForall .
+        ?mapForall toi:sourceConcept ?forallRC ;
+                   toi:targetConcept ?mForall .
+
+        FILTER (?mForall != ?expectedMForall)
+      }
+    """ ;
+  ] .
+
+# =============================================================================
+# Проверка полноты: для каждого ограничения ∃ r.C должно быть отображение
+# =============================================================================
+toi:OM3RoleExistsCompletenessShape a sh:NodeShape ;
+  sh:targetClass toi:OntologyMorphism ;
+  sh:sparql [
+    sh:message "OM-3: отсутствует отображение для ∃ r.C" ;
+    sh:severity sh:Violation ;
+    sh:prefixes <http://example.org/toi/prefixes> ;
+    sh:select """
+      SELECT $this ?existsRC ?r ?C
+      WHERE {
+        ?existsRC a owl:Restriction ;
+                  owl:onProperty ?r ;
+                  owl:someValuesFrom ?C .
+
+        FILTER NOT EXISTS {
+          $this toi:hasMapping ?mapExists .
+          ?mapExists toi:sourceConcept ?existsRC .
+        }
+      }
+    """ ;
+  ] .
+
+# =============================================================================
+# Проверка отображения ролей
+# =============================================================================
+toi:RoleMappingShape a sh:NodeShape ;
+  sh:targetClass toi:RoleMapping ;
+  sh:property [
+    sh:path toi:sourceRole ;
+    sh:class owl:ObjectProperty ;
+    sh:minCount 1 ;
+    sh:maxCount 1 ;
+    sh:message "sourceRole должен быть owl:ObjectProperty" ;
+  ] ;
+  sh:property [
+    sh:path toi:targetRole ;
+    sh:class owl:ObjectProperty ;
+    sh:minCount 1 ;
+    sh:maxCount 1 ;
+    sh:message "targetRole должен быть owl:ObjectProperty" ;
+  ] .

@@ -1,0 +1,279 @@
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix dct: <http://purl.org/dc/terms/> .
+@prefix tax: <https://smev.ru/ontologies/tax/v1.0#> .
+
+# =============================================================================
+# Онтология «Федеральная налоговая служба (ФНС России)»
+# Домен: Налог на доходы физических лиц (НДФЛ), налоговые декларации,
+#        налоговые вычеты (ст. 218-221 НК РФ).
+# Назначение: формализация понятий налоговой предметной области для
+#             Adaptive Semantic Gateway (ASG / АСШ) при межведомственном
+#             обмене налоговыми данными через СМЭВ.
+# Версия: 1.0
+# =============================================================================
+
+<https://smev.ru/ontologies/tax/v1.0> a owl:Ontology ;
+  dct:title "Онтология ФНС (налог на доходы физических лиц)"@ru ;
+  dct:title "Tax Ontology (Federal Tax Service — NDFL)"@en ;
+  dct:creator "ASG Pilot Team (ФНС России / СМЭВ)"@ru ;
+  dct:creator "ASG Pilot Team (FNS of Russia / SMEV)"@en ;
+  dct:description "OWL 2 DL-онтология, описывающая понятия налоговой предметной области: налогоплательщик, налоговая декларация, источник дохода, налоговый вычет, работодатель, налоговый орган. Содержит объектные и датные свойства, OWL 2-ограничения и семантические метки на русском языке."@ru ;
+  rdfs:comment "Онтология пилотного домена ASG. Соответствует Налоговому кодексу РФ (часть вторая от 05.08.2000 № 117-ФЗ), главе 23 «Налог на доходы физических лиц» (НДФЛ) и приказу ФНС России от 15.10.2021 № ЕД-7-11/903@ об утверждении формы 3-НДФЛ."@ru ;
+  owl:versionInfo "1.0" .
+
+# -----------------------------------------------------------------------------
+# Пользовательские типы данных (datatypes с фасетами)
+# -----------------------------------------------------------------------------
+
+# ИНН физического лица — 12 цифр.
+tax:Inn12DigitString a rdfs:Datatype ;
+  owl:onDatatype xsd:string ;
+  owl:withRestrictions (
+    [ xsd:pattern "^[0-9]{12}$" ]
+  ) ;
+  rdfs:label "ИНН физического лица (12 цифр)"@ru ;
+  rdfs:comment "Идентификационный номер налогоплательщика — физическое лицо, 12 цифр (приказ ФНС России № ЕД-7-14/927@ от 30.09.2022)."@ru .
+
+# ИНН юридического лица — 10 цифр (для работодателей/налоговых агентов).
+tax:Inn10DigitString a rdfs:Datatype ;
+  owl:onDatatype xsd:string ;
+  owl:withRestrictions (
+    [ xsd:pattern "^[0-9]{10}$" ]
+  ) ;
+  rdfs:label "ИНН юридического лица (10 цифр)"@ru ;
+  rdfs:comment "Идентификационный номер налогоплательщика — юридическое лицо, 10 цифр."@ru .
+
+# КПП — 9 цифр (код причины постановки на учёт, для юр.лиц).
+tax:Kpp9DigitString a rdfs:Datatype ;
+  owl:onDatatype xsd:string ;
+  owl:withRestrictions (
+    [ xsd:pattern "^[0-9]{9}$" ]
+  ) ;
+  rdfs:label "КПП (9 цифр)"@ru ;
+  rdfs:comment "Код причины постановки на учёт — 9 цифр (применяется вместе с ИНН юридического лица)."@ru .
+
+# Тип налогового вычета — контролируемое словарное значение.
+tax:DeductionTypeString a rdfs:Datatype ;
+  owl:onDatatype xsd:string ;
+  owl:withRestrictions (
+    [ xsd:pattern "^(standard|social|property|investment|professional)$" ]
+  ) ;
+  rdfs:label "Тип налогового вычета"@ru ;
+  rdfs:comment "Стандартный | социальный | имущественный | инвестиционный | профессиональный — категории вычетов по ст. 218–221 НК РФ."@ru .
+
+# -----------------------------------------------------------------------------
+# Классы
+# -----------------------------------------------------------------------------
+
+tax:Taxpayer a owl:Class ;
+  # Taxpayer ≡ ∃ inn.⊤ ⊓ ∃ registeredWith.TaxAuthority
+  owl:equivalentClass [
+    a owl:Class ;
+    owl:intersectionOf (
+      [ a owl:Restriction ;
+        owl:onProperty tax:inn ;
+        owl:someValuesFrom rdfs:Literal
+      ]
+      [ a owl:Restriction ;
+        owl:onProperty tax:registeredWith ;
+        owl:someValuesFrom tax:TaxAuthority
+      ]
+    )
+  ] ;
+  rdfs:label "Налогоплательщик (физическое лицо)"@ru ,
+             "Taxpayer"@en ;
+  rdfs:comment "Физическое лицо, зарегистрированное в налоговом органе и имеющее ИНН. Логически определяется как пересечение двух условий: наличие хотя бы одного значения датного свойства tax:inn и наличие хотя бы одной связи tax:registeredWith с tax:TaxAuthority."@ru .
+
+tax:TaxDeclaration a owl:Class ;
+  rdfs:label "Налоговая декларация (3-НДФЛ)"@ru ,
+             "Tax declaration"@en ;
+  rdfs:comment "Налоговая декларация по налогу на доходы физических лиц (форма 3-НДФЛ). Подаётся за конкретный налоговый период (год). Содержит сведения о доходах, вычетах и исчисленной сумме налога."@ru .
+
+tax:IncomeSource a owl:Class ;
+  rdfs:label "Источник дохода"@ru ,
+             "Income source"@en ;
+  rdfs:comment "Источник получения дохода налогоплательщиком: заработная плата, доход от предпринимательской деятельности, доход от продажи имущества, дивиденды и др."@ru .
+
+tax:TaxDeduction a owl:Class ;
+  rdfs:label "Налоговый вычет"@ru ,
+             "Tax deduction"@en ;
+  rdfs:comment "Налоговый вычет по НДФЛ — сумма, на которую уменьшается налоговая база. Тип вычета определяется свойством tax:deductionType (standard | social | property | investment | professional) по ст. 218–221 НК РФ."@ru .
+
+tax:Employer a owl:Class ;
+  rdfs:label "Работодатель (налоговый агент)"@ru ,
+             "Employer (tax agent)"@en ;
+  rdfs:comment "Юридическое лицо или индивидуальный предприниматель, выплачивающий доходы физическому лицу и признаваемый налоговым агентом по ст. 226 НК РФ. Обязан удерживать и перечислять НДФЛ."@ru .
+
+tax:TaxAuthority a owl:Class ;
+  rdfs:label "Налоговый орган (ФНС России)"@ru ,
+             "Tax authority"@en ;
+  rdfs:comment "Территориальный налоговый орган ФНС России, в котором налогоплательщик состоит на учёте. Идентифицируется по коду ИФНС (4 цифры)."@ru .
+
+tax:TaxYear a owl:Class ;
+  rdfs:label "Налоговый период (год)"@ru ,
+             "Tax year"@en ;
+  rdfs:comment "Налоговый период по НДФЛ — календарный год (ст. 216 НК РФ)."@ru .
+
+# Employer и TaxAuthority — попарно несовместимые сущности
+# (работодатель не может быть налоговым органом в одном и том же отношении).
+tax:Employer owl:disjointWith tax:TaxAuthority .
+tax:Employer owl:disjointWith tax:Taxpayer .
+tax:TaxAuthority owl:disjointWith tax:Taxpayer .
+
+# -----------------------------------------------------------------------------
+# Объектные свойства
+# -----------------------------------------------------------------------------
+
+tax:filesDeclaration a owl:ObjectProperty ;
+  rdfs:domain tax:Taxpayer ;
+  rdfs:range tax:TaxDeclaration ;
+  rdfs:label "подает декларацию"@ru ,
+             "files declaration"@en ;
+  rdfs:comment "Связывает налогоплательщика с поданными им налоговыми декларациями (3-НДФЛ). Один налогоплательщик может подавать несколько деклараций (за разные годы или с корректировками)."@ru .
+
+tax:declaresIncomeFrom a owl:ObjectProperty ;
+  rdfs:domain tax:TaxDeclaration ;
+  rdfs:range tax:IncomeSource ;
+  rdfs:label "декларирует доход от"@ru ,
+             "declares income from"@en ;
+  rdfs:comment "Связывает налоговую декларацию с источником дохода, который в ней задекларирован."@ru .
+
+tax:claimsDeduction a owl:ObjectProperty ;
+  rdfs:domain tax:TaxDeclaration ;
+  rdfs:range tax:TaxDeduction ;
+  rdfs:label "заявляет вычет"@ru ,
+             "claims deduction"@en ;
+  rdfs:comment "Связывает налоговую декларацию с налоговым вычетом, который в ней заявлен."@ru .
+
+tax:registeredWith a owl:ObjectProperty ,
+                    owl:FunctionalProperty ;
+  rdfs:domain tax:Taxpayer ;
+  rdfs:range tax:TaxAuthority ;
+  rdfs:label "состоит на учёте в"@ru ,
+             "registered with"@en ;
+  rdfs:comment "Связывает налогоплательщика с налоговым органом, в котором он состоит на учёте. У одного налогоплательщика — один основной налоговый орган (functional property)."@ru .
+
+tax:employsTaxpayer a owl:ObjectProperty ;
+  rdfs:domain tax:Employer ;
+  rdfs:range tax:Taxpayer ;
+  rdfs:label "является работодателем для"@ru ,
+             "employs taxpayer"@en ;
+  rdfs:comment "Связывает работодателя (налогового агента) с работающими у него физическими лицами — налогоплательщиками НДФЛ."@ru .
+
+tax:declarationForYear a owl:ObjectProperty ,
+                        owl:FunctionalProperty ;
+  rdfs:domain tax:TaxDeclaration ;
+  rdfs:range tax:TaxYear ;
+  rdfs:label "декларация за год"@ru ,
+             "declaration for year"@en ;
+  rdfs:comment "Связывает налоговую декларацию с налоговым периодом (годом), за который она подана. Для одной декларации — ровно один год (functional property)."@ru .
+
+# -----------------------------------------------------------------------------
+# Датные свойства
+# -----------------------------------------------------------------------------
+
+tax:inn a owl:DatatypeProperty ,
+         owl:FunctionalProperty ;
+  rdfs:domain [ a owl:Class ; owl:unionOf ( tax:Taxpayer tax:Employer ) ] ;
+  rdfs:range [
+    a rdfs:Datatype ;
+    owl:unionOf ( tax:Inn12DigitString tax:Inn10DigitString )
+  ] ;
+  rdfs:label "ИНН"@ru ,
+             "INN"@en ;
+  rdfs:comment "Идентификационный номер налогоплательщика. Для физического лица — 12 цифр, для юридического лица (работодателя) — 10 цифр. Является ключевым атрибутом для междоменного сопоставления (см. cross-domain-mapping.ttl)."@ru .
+
+tax:fullName a owl:DatatypeProperty ,
+              owl:FunctionalProperty ;
+  rdfs:domain tax:Taxpayer ;
+  rdfs:range xsd:string ;
+  rdfs:label "ФИО налогоплательщика"@ru ,
+             "taxpayer full name"@en ;
+  rdfs:comment "Полное наименование физического лица — налогоплательщика: фамилия, имя, отчество."@ru .
+
+tax:year a owl:DatatypeProperty ,
+          owl:FunctionalProperty ;
+  rdfs:domain tax:TaxYear ;
+  rdfs:range xsd:positiveInteger ;
+  rdfs:label "год"@ru ,
+             "year"@en ;
+  rdfs:comment "Календарный год (4 цифры), к которому относится налоговый период. Например: 2025."@ru .
+
+tax:amountRub a owl:DatatypeProperty ;
+  rdfs:range xsd:integer ;
+  rdfs:label "сумма в рублях"@ru ,
+             "amount in RUB"@en ;
+  rdfs:comment "Денежная сумма в российских рублях (целое число; копейки не учитываются для упрощения модели). Применяется к доходам, вычетам, удержанному/исчисленному налогу."@ru .
+
+tax:deductionType a owl:DatatypeProperty ,
+                   owl:FunctionalProperty ;
+  rdfs:domain tax:TaxDeduction ;
+  rdfs:range tax:DeductionTypeString ;
+  rdfs:label "тип вычета"@ru ,
+             "deduction type"@en ;
+  rdfs:comment "Категория налогового вычета по ст. 218–221 НК РФ. Принимает одно из значений: standard | social | property | investment | professional."@ru .
+
+tax:ifnsCode a owl:DatatypeProperty ,
+              owl:FunctionalProperty ;
+  rdfs:domain tax:TaxAuthority ;
+  rdfs:range xsd:string ;
+  rdfs:label "код ИФНС"@ru ,
+             "IFNS code"@en ;
+  rdfs:comment "Четырёхзначный код территориальной инспекции ФНС России (ИФНС). Например: 7733 (ИФНС России № 33 по г. Москве)."@ru .
+
+tax:kpp a owl:DatatypeProperty ,
+         owl:FunctionalProperty ;
+  rdfs:domain tax:Employer ;
+  rdfs:range tax:Kpp9DigitString ;
+  rdfs:label "КПП"@ru ,
+             "KPP"@en ;
+  rdfs:comment "Код причины постановки на учёт — 9 цифр, применяется для юридических лиц-работодателей."@ru .
+
+tax:declarationStatus a owl:DatatypeProperty ,
+                       owl:FunctionalProperty ;
+  rdfs:domain tax:TaxDeclaration ;
+  rdfs:range xsd:string ;
+  rdfs:label "статус декларации"@ru ,
+             "declaration status"@en ;
+  rdfs:comment "Статус обработки декларации в ФНС: draft | submitted | accepted | rejected | corrected."@ru .
+
+# -----------------------------------------------------------------------------
+# Дополнительные ограничения целостности
+# -----------------------------------------------------------------------------
+
+# TaxDeclaration обязана иметь ровно один год и хотя бы один источник дохода.
+tax:TaxDeclaration rdfs:subClassOf
+  [ a owl:Restriction ; owl:onProperty tax:declarationForYear ; owl:qualifiedCardinality "1"^^xsd:nonNegativeInteger ; owl:onClass tax:TaxYear ] ,
+  [ a owl:Restriction ; owl:onProperty tax:declaresIncomeFrom ; owl:qualifiedMinCardinality "1"^^xsd:nonNegativeInteger ; owl:onClass tax:IncomeSource ] ,
+  [ a owl:Restriction ; owl:onProperty tax:declarationStatus   ; owl:qualifiedCardinality "1"^^xsd:nonNegativeInteger ; owl:onDataRange xsd:string ] .
+
+# TaxDeduction обязан иметь тип вычета и сумму.
+tax:TaxDeduction rdfs:subClassOf
+  [ a owl:Restriction ; owl:onProperty tax:deductionType ; owl:qualifiedCardinality "1"^^xsd:nonNegativeInteger ; owl:onDataRange tax:DeductionTypeString ] ,
+  [ a owl:Restriction ; owl:onProperty tax:amountRub      ; owl:qualifiedCardinality "1"^^xsd:nonNegativeInteger ; owl:onDataRange xsd:integer ] .
+
+# Taxpayer обязан иметь ровно один ИНН и ровно один налоговый орган.
+tax:Taxpayer rdfs:subClassOf
+  [ a owl:Restriction ; owl:onProperty tax:inn             ; owl:qualifiedCardinality "1"^^xsd:nonNegativeInteger ; owl:onDataRange tax:Inn12DigitString ] ,
+  [ a owl:Restriction ; owl:onProperty tax:fullName         ; owl:qualifiedCardinality "1"^^xsd:nonNegativeInteger ; owl:onDataRange xsd:string ] ,
+  [ a owl:Restriction ; owl:onProperty tax:registeredWith   ; owl:qualifiedCardinality "1"^^xsd:nonNegativeInteger ; owl:onClass tax:TaxAuthority ] .
+
+# Employer обязан иметь ИНН (10 цифр) и КПП.
+tax:Employer rdfs:subClassOf
+  [ a owl:Restriction ; owl:onProperty tax:inn ; owl:qualifiedCardinality "1"^^xsd:nonNegativeInteger ; owl:onDataRange tax:Inn10DigitString ] ,
+  [ a owl:Restriction ; owl:onProperty tax:kpp ; owl:qualifiedCardinality "1"^^xsd:nonNegativeInteger ; owl:onDataRange tax:Kpp9DigitString ] .
+
+# TaxAuthority обязан иметь код ИФНС.
+tax:TaxAuthority rdfs:subClassOf
+  [ a owl:Restriction ; owl:onProperty tax:ifnsCode ; owl:qualifiedCardinality "1"^^xsd:nonNegativeInteger ; owl:onDataRange xsd:string ] .
+
+# TaxYear обязан иметь ровно одно значение года.
+tax:TaxYear rdfs:subClassOf
+  [ a owl:Restriction ; owl:onProperty tax:year ; owl:qualifiedCardinality "1"^^xsd:nonNegativeInteger ; owl:onDataRange xsd:positiveInteger ] .
+
+# =============================================================================
+# Конец файла.
+# =============================================================================

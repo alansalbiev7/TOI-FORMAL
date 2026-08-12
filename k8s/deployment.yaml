@@ -1,0 +1,249 @@
+# k8s/deployment.yaml — Deployment ASG Core (3 реплики)
+# Разворачивается в namespace asg-system.
+# Образ: ghcr.io/smev/asg-core:1.0.0 (пробрасывается через kustomize image override).
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: asg-core
+  namespace: asg-system
+  labels:
+    app.kubernetes.io/name: asg
+    app.kubernetes.io/component: core
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  replicas: 3
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0        # Нулевая недоступность — SLO 99.5%
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: asg
+      app.kubernetes.io/component: core
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: asg
+        app.kubernetes.io/component: core
+        app.kubernetes.io/version: "1.0.0"
+      annotations:
+        # Перезапуск подов при изменении конфигурации (хэш ConfigMap в аннотации)
+        checksum/config: "REPLACE_VIA_KUSTOMIZE_OR_HELM"
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: asg-core
+      # Антиаффинность: реплики разносятся по разным узлам (HA)
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: asg
+                    app.kubernetes.io/component: core
+                topologyKey: kubernetes.io/hostname
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        fsGroupChangePolicy: "OnRootMismatch"
+        seccompProfile:
+          type: RuntimeDefault
+      # PreStop hook даёт Ingress'у время убрать под из ротации
+      containers:
+        - name: asg-core
+          image: ghcr.io/smev/asg-core:1.0.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+            - name: grpc
+              containerPort: 9090
+              protocol: TCP
+            - name: debug
+              containerPort: 5005
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: asg-core-config
+            - secretRef:
+                name: asg-core-secret
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: ASG_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            # OTLP-эндпоинт Jaeger (через Sidecar/Service в asg-system)
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://jaeger-collector.asg-system.svc:4317"
+            - name: OTEL_SERVICE_NAME
+              value: "asg-core"
+          resources:
+            requests:
+              cpu: "1"
+              memory: "2Gi"
+              ephemeral-storage: "512Mi"
+            limits:
+              cpu: "2"
+              memory: "4Gi"
+              ephemeral-storage: "1Gi"
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: http
+              scheme: HTTP
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /api/v1/ready
+              port: http
+              scheme: HTTP
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /api/v1/health
+              port: http
+              scheme: HTTP
+            periodSeconds: 10
+            failureThreshold: 30          # до 5 минут на запуск
+            timeoutSeconds: 5
+          # Корректное завершение: прекратить приём новых gRPC-стримов
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 15"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            privileged: false
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            capabilities:
+              drop: ["ALL"]
+          # Монтируем SHACL-шейпы и онтологии (ReadOnly) + tmp для JVM heapdump
+          volumeMounts:
+            - name: config
+              mountPath: /etc/asg
+              readOnly: true
+            - name: shacl-shapes
+              mountPath: /etc/asg/shacl
+              readOnly: true
+            - name: ontologies
+              mountPath: /etc/asg/ontologies
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+            - name: logs
+              mountPath: /app/logs
+      volumes:
+        - name: config
+          configMap:
+            name: asg-core-config-files
+            items:
+              - key: application.conf
+                path: application.conf
+        - name: shacl-shapes
+          configMap:
+            name: asg-shacl-shapes
+            defaultMode: 0444
+        - name: ontologies
+          configMap:
+            name: asg-ontologies
+            defaultMode: 0444
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Mi
+        - name: logs
+          emptyDir:
+            sizeLimit: 256Mi
+---
+# ConfigMap с параметрами приложения (HOCON конфиг монтируется отдельно как файл)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: asg-core-config
+  namespace: asg-system
+  labels:
+    app.kubernetes.io/name: asg
+    app.kubernetes.io/component: core
+data:
+  ASG_ENV: "prod"
+  ASG_HTTP_HOST: "0.0.0.0"
+  ASG_HTTP_PORT: "8080"
+  ASG_GRPC_PORT: "9090"
+  ASG_REDIS_HOST: "redis.asg-system.svc:6379"
+  ASG_POSTGRES_HOST: "postgres.asg-system.svc:5432"
+  ASG_POSTGRES_DB: "asg"
+  ASG_JENA_ENDPOINT: "http://jena-fuseki.asg-system.svc:3030/asg"
+  ASG_LOG_LEVEL: "INFO"
+  ASG_JWT_ISSUER: "https://smev.ru/asg"
+  OTEL_TRACES_SAMPLER: "parentbased_traceidratio"
+  OTEL_TRACES_SAMPLER_ARG: "0.1"     # 10% выборка трейсов
+---
+# ConfigMap с файлом конфигурации (HOCON application.conf)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: asg-core-config-files
+  namespace: asg-system
+data:
+  application.conf: |
+    # Реальное содержимое дублирует файл asg-config.yaml — см. его.
+    # Здесь приведён минимальный скелет, достаточный для запуска в k8s.
+    akka {
+      loglevel = INFO
+      actor {
+        provider = "local"
+        default-dispatcher {
+          executor = "default-executor"
+          throughput = 5
+        }
+      }
+    }
+    asg {
+      http {
+        host = "0.0.0.0"
+        port = 8080
+      }
+      grpc.port = 9090
+      cache.ttl = "300s"
+    }
+---
+# Secret — секреты (бд, JWT, пароль Jena) — в проде должно быть sealed-secrets/external-secrets
+apiVersion: v1
+kind: Secret
+metadata:
+  name: asg-core-secret
+  namespace: asg-system
+type: Opaque
+stringData:
+  ASG_POSTGRES_USER: "asg"
+  ASG_POSTGRES_PASSWORD: "REPLACE_VIA_EXTERNAL_SECRETS"
+  ASG_JWT_SECRET: "REPLACE_VIA_EXTERNAL_SECRETS"
+  ASG_JENA_ADMIN_PASSWORD: "REPLACE_VIA_EXTERNAL_SECRETS"

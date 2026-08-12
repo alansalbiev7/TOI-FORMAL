@@ -1,0 +1,55 @@
+# =============================================================================
+# SPARQL-запрос для проверки SS-1 (семантической инвариантности)
+#
+# Условие: для любого запроса q к онтологии O₁,
+#   O₁ ⊨ q  ⟺  O₂ ⊨ m(q)
+#
+# Проверка: для каждого запроса q (как класса owl:Class) выполняется:
+#   - запрос выполним в O₁ (имеет экземпляры)
+#   - запрос m(q) выполним в O₂ (имеет экземпляры)
+#   ИЛИ
+#   - запрос невыполним в O₁ (нет экземпляров)
+#   - запрос m(q) невыполним в O₂ (нет экземпляров)
+#
+# Использование:
+#   sparql --data=ontologies/O1.ttl --data=ontologies/O2.ttl \
+#          --data=mappings/m.ttl --query=sparql/ss1-verify.rq
+# =============================================================================
+
+PREFIX rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX owl:  <http://www.w3.org/2002/07/owl#>
+PREFIX xsd:  <http://www.w3.org/2001/XMLSchema#>
+PREFIX toi:  <https://smev.ru/toi/ontology#>
+PREFIX sh:   <http://www.w3.org/ns/shacl#>
+
+SELECT ?morphism ?query ?satisfiableInO1 ?satisfiableInO2 ?mQuery
+       (IF(?satisfiableInO1 != ?satisfiableInO2, "SS-1 VIOLATION", "OK") AS ?status)
+WHERE {
+  # Идентификатор морфизма
+  ?morphism a toi:OntologyMorphism .
+
+  # Запрос как класс owl:Class
+  ?query a owl:Class .
+
+  # Отображение запроса
+  ?morphism toi:hasMapping ?mapQ .
+  ?mapQ toi:sourceConcept ?query ;
+        toi:targetConcept ?mQuery .
+
+  # Проверка выполнимости в O₁ (существует ли индивид типа ?query)
+  OPTIONAL {
+    ?instance1 a ?query .
+  }
+  BIND(BOUND(?instance1) AS ?satisfiableInO1)
+
+  # Проверка выполнимости в O₂ (существует ли индивид типа ?mQuery)
+  OPTIONAL {
+    ?instance2 a ?mQuery .
+  }
+  BIND(BOUND(?instance2) AS ?satisfiableInO2)
+
+  # Фильтр: только нарушения
+  FILTER(?satisfiableInO1 != ?satisfiableInO2)
+}
+ORDER BY ?status ?query

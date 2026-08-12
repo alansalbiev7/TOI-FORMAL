@@ -1,0 +1,232 @@
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix dct: <http://purl.org/dc/terms/> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+@prefix asg: <https://smev.ru/ontologies/asg/mapping#> .
+@prefix reg:    <https://smev.ru/ontologies/registration/v1.0#> .
+@prefix health: <https://smev.ru/ontologies/healthcare/v1.0#> .
+@prefix tax:    <https://smev.ru/ontologies/tax/v1.0#> .
+
+# =============================================================================
+# Кросс-доменная онтология сопоставления (alignment)
+# Домены: Регистрация по месту жительства ↔ ЕГИСЗ (здравоохранение) ↔ ФНС (налоги)
+# Назначение: декларация эквивалентностей классов и свойств между тремя
+#             пилотными онтологиями ASG / АСШ. Используется Агентом-Сопоставителем
+#             (MatcherAgent) для склейки персон при межведомственном обмене
+#             через СМЭВ.
+# Версия: 1.0
+# =============================================================================
+
+<https://smev.ru/ontologies/asg/cross-domain-mapping> a owl:Ontology ;
+  dct:title "Кросс-доменное сопоставление онтологий ASG"@ru ;
+  dct:title "ASG Cross-Domain Ontology Alignment"@en ;
+  dct:creator "ASG Pilot Team (СМЭВ / МВД / Минздрав / ФНС России)"@ru ;
+  dct:creator "ASG Pilot Team (SMEV / MVD / Minzdrav / FNS of Russia)"@en ;
+  dct:description "OWL 2 DL-онтология, задающая alignment между тремя пилотными доменными онтологиями ASG: registration, healthcare, tax. Содержит декларации owl:equivalentClass и owl:equivalentProperty с условиями сопоставления, основанными на совпадении ИНН/СНИЛС физического лица."@ru ;
+  rdfs:comment "Данный файл используется Агентом-Сопоставителем ASG (MatcherAgent.scala) для построения сквозного идентификатора персоны (Personal URI) на основании совпадения атрибута ИНН в трёх доменных онтологиях. Каждое сопоставление снабжено пометкой условия сопоставления (asg:matchCondition) и уровнем доверия (asg:confidence)."@ru ;
+  owl:versionInfo "1.0" ;
+  owl:imports <https://smev.ru/ontologies/registration/v1.0> ,
+              <https://smev.ru/ontologies/healthcare/v1.0> ,
+              <https://smev.ru/ontologies/tax/v1.0> .
+
+# -----------------------------------------------------------------------------
+# Аннотационные свойства (пользовательские) — для описания условий alignment
+# -----------------------------------------------------------------------------
+
+asg:matchCondition a owl:AnnotationProperty ;
+  rdfs:label "условие сопоставления"@ru ,
+             "match condition"@en ;
+  rdfs:comment "Описывает предикат, при выполнении которого справедливо соответствие (например: «при совпадении ИНН физического лица»)."@ru ;
+  rdfs:range xsd:string .
+
+asg:confidence a owl:AnnotationProperty ;
+  rdfs:label "уровень доверия"@ru ,
+             "confidence"@en ;
+  rdfs:comment "Числовая оценка уверенности в сопоставлении от 0 до 1. Используется Агентом-Арбитром ASG (ArbiterAgent.scala) для выбора наиболее правдоподобного выравнивания."@ru ;
+  rdfs:range xsd:decimal .
+
+asg:alignmentRole a owl:AnnotationProperty ;
+  rdfs:label "роль в сопоставлении"@ru ,
+             "alignment role"@en ;
+  rdfs:comment "Роль сущности в alignment: source | target | bridge."@ru ;
+  rdfs:range xsd:string .
+
+# -----------------------------------------------------------------------------
+# 1. Эквивалентность датного свойства inn (ключ междоменного сопоставления)
+# -----------------------------------------------------------------------------
+
+# reg:inn ≡ health:inn ≡ tax:inn
+# Три свойства объявляются как логически эквивалентные: owl:equivalentProperty
+# транзитивно замыкается средствами OWL 2 DL-ризонера (Pellet, HermiT, ELK).
+reg:inn      owl:equivalentProperty health:inn .
+reg:inn      owl:equivalentProperty tax:inn .
+health:inn   owl:equivalentProperty tax:inn .
+
+# Аннотации к эквивалентности inn
+reg:inn    asg:matchCondition "значение ИНН совпадает (12 цифр для физического лица)" ;
+           asg:confidence "1.00"^^xsd:decimal .
+health:inn asg:matchCondition "значение ИНН совпадает (12 цифр для физического лица)" ;
+           asg:confidence "1.00"^^xsd:decimal .
+tax:inn    asg:matchCondition "значение ИНН совпадает (12 цифр для физического лица)" ;
+           asg:confidence "1.00"^^xsd:decimal .
+
+# -----------------------------------------------------------------------------
+# 2. Эквивалентность классов по совпадению ИНН
+#    reg:Person ≡ health:Patient (when same INN)
+#    reg:Person ≡ tax:Taxpayer (when same INN)
+#    health:Patient ≡ tax:Taxpayer (when same INN)  — следует по транзитивности
+# -----------------------------------------------------------------------------
+
+# Прямые декларации owl:equivalentClass с указанием условия сопоставления.
+# Внимание: строгая логическая эквивалентность справедлива лишь при условии,
+# что inn-свойство имеет непустое значение (т.е. индивидуал имеет ИНН).
+# Для зарубежных граждан без ИНН соответствие не гарантируется.
+
+reg:Person    owl:equivalentClass  health:Patient ;
+              asg:matchCondition "совпадение атрибута reg:inn = health:inn (12 цифр)" ;
+              asg:confidence "0.95"^^xsd:decimal .
+
+reg:Person    owl:equivalentClass  tax:Taxpayer ;
+              asg:matchCondition "совпадение атрибута reg:inn = tax:inn (12 цифр)" ;
+              asg:confidence "0.95"^^xsd:decimal .
+
+health:Patient owl:equivalentClass tax:Taxpayer ;
+              asg:matchCondition "совпадение атрибута health:inn = tax:inn (12 цифр)" ;
+              asg:confidence "0.95"^^xsd:decimal .
+
+# -----------------------------------------------------------------------------
+# 3. Строгая (qualified) эквивалентность через OWL-ограничения
+#    Вместо прямой декларации owl:equivalentClass на всём классе (которая
+#    технически была бы некорректна, т.к. не каждый Person — Patient), здесь
+#    определяются квалифицированные подклассы — индивидуалы с заданным ИНН —
+#    между которыми эквивалентность уже логически корректна.
+# -----------------------------------------------------------------------------
+
+# Person-with-INN — пересечение Person и ограничения ∃ inn.⊤
+asg:PersonWithInn a owl:Class ;
+  owl:equivalentClass [
+    a owl:Class ;
+    owl:intersectionOf (
+      reg:Person
+      [ a owl:Restriction ;
+        owl:onProperty reg:inn ;
+        owl:minCardinality "1"^^xsd:nonNegativeInteger
+      ]
+    )
+  ] ;
+  rdfs:label "Физическое лицо с заполненным ИНН"@ru ,
+             "Person with INN"@en ;
+  rdfs:comment "Подкласс reg:Person, для которого задано непустое значение свойства reg:inn. Только для этого подкласса справедлива строгая логическая эквивалентность с health:Patient и tax:Taxpayer."@ru .
+
+# Patient-with-INN — пересечение Patient и ограничения ∃ inn.⊤
+asg:PatientWithInn a owl:Class ;
+  owl:equivalentClass [
+    a owl:Class ;
+    owl:intersectionOf (
+      health:Patient
+      [ a owl:Restriction ;
+        owl:onProperty health:inn ;
+        owl:minCardinality "1"^^xsd:nonNegativeInteger
+      ]
+    )
+  ] ;
+  rdfs:label "Пациент с заполненным ИНН"@ru ,
+             "Patient with INN"@en ;
+  rdfs:comment "Подкласс health:Patient, для которого задано непустое значение свойства health:inn."@ru .
+
+# Taxpayer-with-INN — пересечение Taxpayer и ∃ inn.⊤
+asg:TaxpayerWithInn a owl:Class ;
+  owl:equivalentClass [
+    a owl:Class ;
+    owl:intersectionOf (
+      tax:Taxpayer
+      [ a owl:Restriction ;
+        owl:onProperty tax:inn ;
+        owl:minCardinality "1"^^xsd:nonNegativeInteger
+      ]
+    )
+  ] ;
+  rdfs:label "Налогоплательщик с заполненным ИНН"@ru ,
+             "Taxpayer with INN"@en ;
+  rdfs:comment "Подкласс tax:Taxpayer, для которого задано непустое значение свойства tax:inn."@ru .
+
+# Строгие эквивалентности квалифицированных подклассов.
+asg:PersonWithInn    owl:equivalentClass asg:PatientWithInn .
+asg:PersonWithInn    owl:equivalentClass asg:TaxpayerWithInn .
+asg:PatientWithInn   owl:equivalentClass asg:TaxpayerWithInn .
+
+# -----------------------------------------------------------------------------
+# 4. Дополнительные эквивалентности родственных датных свойств
+#    (ФИО и дата рождения также присутствуют во всех трёх доменах)
+# -----------------------------------------------------------------------------
+
+# ФИО физического лица — эквивалентно во всех трёх доменах.
+reg:fullName     owl:equivalentProperty health:fullName .
+reg:fullName     owl:equivalentProperty tax:fullName .
+health:fullName  owl:equivalentProperty tax:fullName .
+
+# Дата рождения — присутствует в registration и healthcare (в tax не определена,
+# т.к. для налогообложения дата рождения не существенна — только возраст).
+# Декларируем только registration ↔ healthcare.
+reg:birthDate    owl:equivalentProperty health:birthDate .
+
+# СНИЛС — присутствует в registration и healthcare; в tax косвенно через ИНН.
+reg:snils        owl:equivalentProperty health:snils .
+
+# -----------------------------------------------------------------------------
+# 5. SKOS-концепции для управления версиями alignment (опционально)
+# -----------------------------------------------------------------------------
+
+asg:AlignmentScheme a skos:ConceptScheme ;
+  rdfs:label "Схема концептов междоменного сопоставления ASG"@ru ,
+             "ASG cross-domain alignment concept scheme"@en ;
+  rdfs:comment "SKOS-схема, группирующая альтернативные способы сопоставления персон: по ИНН, по СНИЛС, по ФИО+дата рождения, по полису ОМС."@ru .
+
+asg:AlignmentByInn a skos:Concept ;
+  skos:inScheme asg:AlignmentScheme ;
+  skos:prefLabel "Сопоставление по ИНН"@ru ;
+  skos:prefLabel "Alignment by INN"@en ;
+  skos:definition "Соответствие персон на основе совпадения ИНН (12 цифр). Является основным каналом сопоставления для ASG/СМЭВ."@ru ;
+  asg:confidence "0.95"^^xsd:decimal .
+
+asg:AlignmentBySnils a skos:Concept ;
+  skos:inScheme asg:AlignmentScheme ;
+  skos:prefLabel "Сопоставление по СНИЛС"@ru ;
+  skos:prefLabel "Alignment by SNILS"@en ;
+  skos:definition "Соответствие персон на основе совпадения СНИЛС (11 цифр). Дублирующий канал — используется при отсутствии/ошибке ИНН."@ru ;
+  asg:confidence "0.90"^^xsd:decimal .
+
+asg:AlignmentByFullNameAndBirthDate a skos:Concept ;
+  skos:inScheme asg:AlignmentScheme ;
+  skos:prefLabel "Сопоставление по ФИО и дате рождения"@ru ;
+  skos:prefLabel "Alignment by full name + birth date"@en ;
+  skos:definition "Соответствие персон по комбинации ФИО и даты рождения. Применяется при отсутствии ИНН и СНИЛС (например, для иностранных граждан)."@ru ;
+  asg:confidence "0.75"^^xsd:decimal .
+
+# -----------------------------------------------------------------------------
+# 6. Аннотированные связи с доменными онтологиями (для traceability)
+# -----------------------------------------------------------------------------
+
+asg:registrationDomain a owl:NamedIndividual ;
+  rdfs:label "Домен «Регистрация по месту жительства»"@ru ,
+             "Registration domain"@en ;
+  rdfs:seeAlso <https://smev.ru/ontologies/registration/v1.0> ;
+  asg:alignmentRole "source" .
+
+asg:healthcareDomain a owl:NamedIndividual ;
+  rdfs:label "Домен «ЕГИСЗ (здравоохранение)»"@ru ,
+             "Healthcare domain"@en ;
+  rdfs:seeAlso <https://smev.ru/ontologies/healthcare/v1.0> ;
+  asg:alignmentRole "target" .
+
+asg:taxDomain a owl:NamedIndividual ;
+  rdfs:label "Домен «ФНС (налоги)»"@ru ,
+             "Tax domain"@en ;
+  rdfs:seeAlso <https://smev.ru/ontologies/tax/v1.0> ;
+  asg:alignmentRole "target" .
+
+# =============================================================================
+# Конец файла.
+# =============================================================================

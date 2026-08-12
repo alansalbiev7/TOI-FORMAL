@@ -1,0 +1,104 @@
+{
+  "_comment": "Ожидаемые результаты маппинга между ontology-a.owl и ontology-b.owl для модульных тестов matcher-агента ASG. 10 эталонных mappings с ожидаемой уверенностью и статусом.",
+  "source_ontology": "https://asg.smev.ru/ont/registration/v1.0",
+  "target_ontology": "https://asg.smev.ru/ont/registration/v2.0",
+  "fixture_version": "1.0.0",
+  "created": "2026-08-13",
+  "test_purpose": "Проверка способности matcher-агента выявлять семантические эквиваленты между двумя онтологиями с различной номенклатурой классов и свойств (домен: регистрационный учёт).",
+  "mappings": [
+    {
+      "source_concept": "https://asg.smev.ru/ont/registration/v1.0/Person",
+      "target_concept": "https://asg.smev.ru/ont/registration/v2.0/Citizen",
+      "expected_confidence": 0.97,
+      "expected_status": "passed",
+      "mapping_type": "equivalent",
+      "rationale": "Прямое декларирование owl:equivalentClass в обоих онтологиях. Физическое лицо ≡ Гражданин."
+    },
+    {
+      "source_concept": "https://asg.smev.ru/ont/registration/v1.0/Address",
+      "target_concept": "https://asg.smev.ru/ont/registration/v2.0/Location",
+      "expected_confidence": 0.95,
+      "expected_status": "passed",
+      "mapping_type": "equivalent",
+      "rationale": "Декларировано owl:equivalentClass. Совпадают домен, диапазон и код региона (ФИАС/КЛАДР)."
+    },
+    {
+      "source_concept": "https://asg.smev.ru/ont/registration/v1.0/Registration",
+      "target_concept": "https://asg.smev.ru/ont/registration/v2.0/RegistryRecord",
+      "expected_confidence": 0.93,
+      "expected_status": "passed",
+      "mapping_type": "equivalent",
+      "rationale": "Декларировано owl:equivalentClass. Структура полей (дата начала, статус, орган) идентична."
+    },
+    {
+      "source_concept": "https://asg.smev.ru/ont/registration/v1.0/Residence",
+      "target_concept": "https://asg.smev.ru/ont/registration/v2.0/LivingPlace",
+      "expected_confidence": 0.91,
+      "expected_status": "passed",
+      "mapping_type": "equivalent",
+      "rationale": "Декларировано owl:equivalentClass. Оба характеризуют фактическое место жительства (постоянное/временное)."
+    },
+    {
+      "source_concept": "https://asg.smev.ru/ont/registration/v1.0/Organization",
+      "target_concept": "https://asg.smev.ru/ont/registration/v2.0/Agency",
+      "expected_confidence": 0.89,
+      "expected_status": "passed",
+      "mapping_type": "equivalent",
+      "rationale": "Декларировано owl:equivalentClass. Organization в A шире (включает и юр.лица), Agency в B — только гос.органы. Небольшая асимметрия."
+    },
+    {
+      "source_concept": "https://asg.smev.ru/ont/registration/v1.0/hasAddress",
+      "target_concept": "https://asg.smev.ru/ont/registration/v2.0/locatedAt",
+      "expected_confidence": 0.94,
+      "expected_status": "passed",
+      "mapping_type": "equivalent",
+      "rationale": "Декларировано owl:equivalentProperty. Совпадают домен (Person|Organization ≡ Citizen|Agency) и диапазон (Address ≡ Location)."
+    },
+    {
+      "source_concept": "https://asg.smev.ru/ont/registration/v1.0/hasRegistration",
+      "target_concept": "https://asg.smev.ru/ont/registration/v2.0/registeredBy",
+      "expected_confidence": 0.92,
+      "expected_status": "passed",
+      "mapping_type": "equivalent",
+      "rationale": "Декларировано owl:equivalentProperty. Кардинальность minCardinality=1 совпадает. Оба имеют обратное свойство."
+    },
+    {
+      "source_concept": "https://asg.smev.ru/ont/registration/v1.0/fullName",
+      "target_concept": "https://asg.smev.ru/ont/registration/v2.0/name",
+      "expected_confidence": 0.88,
+      "expected_status": "passed",
+      "mapping_type": "equivalent",
+      "rationale": "Декларировано owl:equivalentProperty. Оба xsd:string, домен Person ≡ Citizen. Лёгкая асимметрия: A требует полное ФИО, B формально не ограничивает."
+    },
+    {
+      "source_concept": "https://asg.smev.ru/ont/registration/v1.0/region",
+      "target_concept": "https://asg.smev.ru/ont/registration/v2.0/regionCode",
+      "expected_confidence": 0.96,
+      "expected_status": "passed",
+      "mapping_type": "equivalent",
+      "rationale": "Декларировано owl:equivalentProperty. Оба xsd:string, кодируют субъект РФ по ГОСТ 7.67-2003."
+    },
+    {
+      "source_concept": "https://asg.smev.ru/ont/registration/v1.0/startDate",
+      "target_concept": "https://asg.smev.ru/ont/registration/v2.0/effectiveDate",
+      "expected_confidence": 0.90,
+      "expected_status": "passed",
+      "mapping_type": "equivalent",
+      "rationale": "Декларировано owl:equivalentProperty. Оба xsd:date. Семантически: дата начала (A) ≡ дата вступления в силу (B)."
+    }
+  ],
+  "expected_summary": {
+    "total_mappings": 10,
+    "passed": 10,
+    "warning": 0,
+    "failed": 0,
+    "mean_confidence": 0.925,
+    "min_confidence": 0.88,
+    "max_confidence": 0.97
+  },
+  "tolerance": {
+    "confidence_delta": 0.05,
+    "note": "Тест считается пройденным, если фактическая уверенность matcher-агента отличается от ожидаемой не более чем на 0.05 и статус совпадает."
+  },
+  "license": "CC-BY-4.0"
+}

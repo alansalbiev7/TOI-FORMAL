@@ -1,0 +1,385 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# asg-config.yaml — конфигурация приложения ASG Core
+# ВНИМАНИЕ: файл содержит HOCON (https://github.com/lightbend/config/blob/master/HOCON.md),
+# используемый Typesafe Config / Akka. Расширение .yaml сохранено для совместимости
+# с монографией; в runtime монтируется как application.conf (см. k8s deployment).
+# ─────────────────────────────────────────────────────────────────────────────
+
+akka {
+  # Уровень логирования: OFF | ERROR | WARNING | INFO | DEBUG
+  loglevel  = "INFO"
+  loggers   = ["akka.event.slf4j.Slf4jLogger"]
+  logging-filter = "akka.event.slf4j.Slf4jLoggingFilter"
+
+  # Формат логов — JSON для Loki
+  log-config-on-start = off
+
+  actor {
+    # Local ActorSystem — без кластеризации (stateless сервис)
+    provider = "local"
+
+    default-dispatcher {
+      type           = "Dispatcher"
+      executor       = "default-executor"
+      throughput      = 5
+      default-executor {
+        fallback = "fork-join-executor"
+      }
+      fork-join-executor {
+        parallelism-min    = 4
+        parallelism-factor = 2.0
+        parallelism-max    = 64
+      }
+    }
+
+    # Диспетчер для блокирующих операций (JDBC, Redis I/O, Jena SPARQL)
+    blocking-dispatcher {
+      type                 = "Dispatcher"
+      executor             = "thread-pool-executor"
+      thread-pool-executor {
+        fixed-pool-size    = 32
+      }
+      throughput           = 1
+    }
+
+    # Диспетчер для SHACL-валидации (CPU-bound)
+    validation-dispatcher {
+      type                 = "Dispatcher"
+      executor             = "fork-join-executor"
+      fork-join-executor {
+        parallelism-min    = 2
+        parallelism-factor = 1.0
+        parallelism-max    = 8
+      }
+      throughput           = 5
+    }
+  }
+
+  http {
+    server {
+      # Лимит запроса: 10 MiB (СМЭВ-конверты могут быть большими)
+      parsing.max-content-length    = 10m
+      parsing.illegal-header-warnings = on
+      # Idle-timeout: 60с (SMEV-шлюз держит соединения долго)
+      idle-timeout                 = 60s
+      request-timeout              = 30s
+      bind-timeout                 = 5s
+    }
+
+    # Пул клиентских подключений к зависимым сервисам (если нужны)
+    host-connection-pool {
+      max-connections              = 50
+      max-open-requests            = 1024
+      idle-timeout                 = 30s
+    }
+  }
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ASG-специфичная конфигурация
+# ─────────────────────────────────────────────────────────────────────────────
+asg {
+  # Окружение (dev/staging/prod) — задаётся через ASG_ENV
+  environment = "dev"
+  environment = ${?ASG_ENV}
+
+  # ─── HTTP-сервер ──────────────────────────────────────────────────────
+  http {
+    host   = "0.0.0.0"
+    host   = ${?ASG_HTTP_HOST}
+    port   = 8080
+    port   = ${?ASG_HTTP_PORT}
+
+    # Эндпоинты health/readiness/metrics
+    health-path    = "/api/v1/health"
+    readiness-path = "/api/v1/ready"
+    metrics-path   = "/metrics"
+
+    # JWT-аутентификация (Bearer)
+    jwt {
+      issuer    = "https://smev.ru/asg"
+      issuer    = ${?ASG_JWT_ISSUER}
+      secret    = ${?ASG_JWT_SECRET}     # императивный override из env
+      algorithm = "HS256"
+      # Время жизни access-токена: 15 минут
+      access-ttl = "15m"
+      # Время жизни refresh-токена: 7 дней
+      refresh-ttl = "7d"
+    }
+  }
+
+  # ─── gRPC-сервер ──────────────────────────────────────────────────────
+  grpc {
+    port = 9090
+    port = ${?ASG_GRPC_PORT}
+    # gRPC keep-alive (предотвращает полузакрытые соединения за L7 LB)
+    keep-alive-time        = "60s"
+    keep-alive-timeout     = "20s"
+    permit-keep-alive-without-calls = true
+    max-inbound-message-size = 10 MiB
+    max-outbound-message-size = 10 MiB
+  }
+
+  # ─── LRU-кэш (Redis) ──────────────────────────────────────────────────
+  cache {
+    type   = "redis"        # alternatives: caffeine (in-process LRU)
+    redis {
+      host = "redis"
+      host = ${?ASG_REDIS_HOST}
+      port = 6379
+      port = ${?ASG_REDIS_PORT}
+      database = 0
+      password = ${?ASG_REDIS_PASSWORD}
+
+      # Пул соединений (lettuce)
+      pool-size       = 16
+      connect-timeout = "2s"
+      socket-timeout  = "5s"
+
+      # TLS — для прод (Managed Redis YC с tls_enabled=true)
+      tls {
+        enabled  = false
+        enabled  = ${?ASG_REDIS_TLS_ENABLED}
+        trust-all = false   # для прод — false; trust-store путь задается через ASG_REDIS_TRUSTSTORE
+      }
+    }
+
+    # TTL кэша по умолчанию: 5 минут
+    ttl = "300s"
+    # Максимальный размер in-process кэша (когда type=caffeine)
+    max-size = 50000
+    # Кэш-ключи преинстанциируются для топ-10 онтологий СМЭВ
+    warmup-on-startup = true
+    warmup-ontologies = [
+      "smev:registration:v1",
+      "smev:healthcare:v1",
+      "smev:tax:v1",
+      "smev:transport:v1",
+      "smev:property:v1",
+      "smev:education:v1",
+      "smev:social:v1",
+      "smev:court:v1",
+      "smev:finance:v1",
+      "smev:migration:v1"
+    ]
+  }
+
+  # ─── PostgreSQL — маппинги онтологий + аудит ──────────────────────────
+  postgres {
+    host = "postgres"
+    host = ${?ASG_POSTGRES_HOST}
+    port = 5432
+    port = ${?ASG_POSTGRES_PORT}
+    database = "asg"
+    database = ${?ASG_POSTGRES_DB}
+    user     = ${?ASG_POSTGRES_USER}
+    password = ${?ASG_POSTGRES_PASSWORD}
+
+    # HikariCP — пул соединений
+    hikari {
+      maximum-pool-size       = 20
+      minimum-idle             = 5
+      connection-timeout       = "5s"
+      idle-timeout             = "10m"
+      max-lifetime             = "30m"
+      leak-detection-threshold = "60s"
+    }
+
+    # Параметры SSL для подключения к Managed PostgreSQL
+    ssl {
+      enabled  = false
+      enabled  = ${?ASG_POSTGRES_SSL_ENABLED}
+      mode     = "verify-full"   # для прод: verify-full
+      cert-path = "/etc/asg/ssl/yc-postgres.crt"
+    }
+
+    # Журнал аудита: 30 дней с партиционированием
+    audit {
+      enabled        = true
+      retention-days = 30
+      partition-by   = "day"
+      # Что логировать: только метаданные (без тела запроса — для GDPR/152-ФЗ)
+      log-request-body = false
+      log-response-body = false
+    }
+  }
+
+  # ─── Apache Jena Fuseki — RDF-хранилище ──────────────────────────────
+  jena {
+    # Опционально: если endpoint пустой — RDF не используется (только SHACL)
+    enabled  = true
+    endpoint = "http://jena-fuseki:3030/asg"
+    endpoint = ${?ASG_JENA_ENDPOINT}
+
+    # Учётные данные администратора Fuseki (для TDB2 dataset)
+    admin {
+      user     = "admin"
+      password = ${?ASG_JENA_ADMIN_PASSWORD}
+    }
+
+    # Пул HTTP-клиентов к Fuseki
+    http {
+      max-connections   = 16
+      connect-timeout   = "3s"
+      socket-timeout    = "30s"
+      request-timeout   = "30s"
+    }
+
+    # SPARQL-кэш на стороне ASG (query-string → result), TTL 10 минут
+    sparql-cache {
+      enabled = true
+      ttl     = "600s"
+      max-entries = 5000
+    }
+  }
+
+  # ─── SHACL-валидация ──────────────────────────────────────────────────
+  shacl {
+    # Каталог с TTL-файлами шейпов (монтируется как ConfigMap)
+    shapes-dir = "/etc/asg/shacl"
+    # Каталог с онтологиями (RDF/Turtle)
+    ontologies-dir = "/etc/asg/ontologies"
+
+    # Стратегия валидации: strict | permissive
+    # strict      — отклонять запрос, если хоть одно SHACL-правило нарушено
+    # permissive  — логировать нарушения, но пропускать (для dev/миграции)
+    mode = "strict"
+    mode = ${?ASG_SHACL_MODE}
+
+    # Hot-reload шейпов: если файл меняется — пересоздаём Shapes-граф
+    hot-reload = true
+    hot-reload-interval = "30s"
+
+    # Прекэширование скомпилированных шейпов в памяти при старте
+    precompile-on-startup = true
+
+    # Тайм-аут валидации одного запроса
+    validation-timeout = "2s"
+  }
+
+  # ─── Прометеус-метрики ────────────────────────────────────────────────
+  prometheus {
+    enabled    = true
+    # Эндпоинт, который скрейпит Prometheus
+    endpoint   = "/metrics"
+    # Имя приложения в метриках
+    service-name = "asg-core"
+    # Подробные гистограммы (для p95/p99)
+    detailed-histograms = true
+    # Список бизнес-метрик, экспортируемых ASG:
+    #   asg_translate_requests_total{ontology,status}
+    #   asg_translate_duration_seconds_bucket{ontology,le}
+    #   asg_cache_hits_total{ontology}
+    #   asg_cache_misses_total{ontology}
+    #   asg_shacl_violations_total{shape}
+    #   asg_hotl_escalations_total{contour}
+    #   asg_active_grpc_streams
+  }
+
+  # ─── Jaeger / OpenTelemetry ──────────────────────────────────────────
+  jaeger {
+    # OTLP-эндпоинт Jaeger-collector (gRPC)
+    otlp-endpoint = "http://jaeger:4317"
+    otlp-endpoint = ${?OTEL_EXPORTER_OTLP_ENDPOINT}
+    service-name  = "asg-core"
+    service-name  = ${?OTEL_SERVICE_NAME}
+
+    # Сэмплинг трейсов (10% по-умолчанию; для prod — ниже, для dev — 100%)
+    sampler = "parentbased_traceidratio"
+    sampler = ${?OTEL_TRACES_SAMPLER}
+    sampler-arg = "0.1"
+    sampler-arg = ${?OTEL_TRACES_SAMPLER_ARG}
+
+    # propagation-форматы (W3C TraceContext по умолчанию, B3 для совместимости)
+    propagators = ["tracecontext", "baggage", "b3"]
+
+    # Аспекты, которые трейсятся:
+    #   - HTTP /api/v1/translate (server span)
+    #   - gRPC translate (server span)
+    #   - SHACL validation (internal span)
+    #   - SPARQL query (client span to Fuseki)
+    #   - Cache get/put (internal span)
+  }
+
+  # ─── Бизнес-параметры HotL-контуров ──────────────────────────────────
+  # См. монографию: HotL (Hard over in Time/Loss) — three-tier escalation.
+  # Контур 1 (heuristic) — быстрая эвристика маппинга без полной DL-проверки.
+  # Контур 2 (formal)    — строгая SHACL-валидация, проверка ALC/ALCHQ.
+  # Контур 3 (operator)  — эскалация оператору СМЭВ (ручной разбор).
+  hotl {
+    contour-1 {
+      # Порог входа в контур 1 — отношение кэш-хитов к общему числу запросов.
+      # Если cache_hit_ratio < 0.3 — переходим к контуру 2 (формальная проверка).
+      cache-hit-ratio-threshold = 0.30
+      # Тайм-аут эвристического маппинга (если дольше — эскалация в контур 2)
+      timeout = "200ms"
+    }
+
+    contour-2 {
+      # Порог входа в контур 2: если SHACL-валидация нашла > N нарушений.
+      shacl-violation-threshold = 0
+      # Тайм-аут формальной валидации (если дольше — эскалация в контур 3)
+      timeout = "2s"
+      # Если после 2 контуров маппинг неудовлетворителен — пишем в audit-log и эскалируем.
+      escalation-on-failure = true
+    }
+
+    contour-3 {
+      # Эскалация оператору СМЭВ (ручной разбор)
+      enabled = true
+      # Таймаут ожидания оператора: 1 час
+      operator-timeout = "1h"
+      # Очередь Kafka / RabbitMQ для оператора
+      operator-queue {
+        broker  = "kafka.smev.ru:9093"
+        topic   = "asg-operator-escalation"
+        group   = "asg-operator-console"
+        ssl.enabled = true
+      }
+      # Уведомления: e-mail + SMS
+      notify {
+        email {
+          smtp-host = "smtp.smev.ru"
+          smtp-port = 587
+          from      = "asg-alerts@smev.ru"
+          to        = ["operator@smev.ru"]
+        }
+      }
+    }
+
+    # Глобальные тайм-ауты эскалации (между контурами)
+    escalation {
+      # Если между контуром 1 и 2 прошло больше этого времени — увеличиваем метрику asg_hotl_escalations_total
+      max-escalation-delay = "5s"
+      # Retry-стратегия: максимум 3 попытки прохождения контура 2 перед эскалацией в 3
+      max-retries-contour-2 = 3
+      # Кулдаун после эскалации в контур 3 (анти-флап)
+      cooldown = "60s"
+    }
+  }
+
+  # ─── Лимиты и троттлинг ───────────────────────────────────────────────
+  ratelimit {
+    # Per-IP троттлинг: 100 запросов в секунду, окно 1с
+    ip-limit = 100
+    ip-window = "1s"
+    # Per-token троттлинг: 1000 RPS на токен
+    token-limit = 1000
+    token-window = "1s"
+    # Глобальный лимит: 10000 RPS (защита от DDoS)
+    global-limit = 10000
+    global-window = "1s"
+  }
+
+  # ─── Логирование ──────────────────────────────────────────────────────
+  logging {
+    level = "INFO"
+    level = ${?ASG_LOG_LEVEL}
+    # JSON-формат для Loki
+    format = "json"
+    # Корреляция запросов (X-Request-ID прокидывается из Ingress)
+    request-id-header = "X-Request-ID"
+    # MDC-контекст (поля в каждой строке лога)
+    mdc-fields = ["request_id", "user_id", "ontology", "contour"]
+  }
+}

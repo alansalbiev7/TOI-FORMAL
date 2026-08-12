@@ -1,0 +1,117 @@
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix toi: <https://smev.ru/toi/ontology#> .
+
+# =============================================================================
+# SHACL-ограничение OM-2 (сохранение точных соединений ⊔)
+#
+# Условие: для любых концептов C, D из O₁,
+#   m(C ⊔ D) = m(C) ⊔ m(D)
+#
+# В RDF-представлении:
+#   toi:union(C, D) обозначает C ⊔ D
+#   отображение m кодируется через toi:hasMapping
+#
+# SHACL-проверка: для каждой пары (C, D), если заданы отображения
+# C → m(C) и D → m(D), то должно быть отображение (C ⊔ D) → (m(C) ⊔ m(D)),
+# и других отображений для C ⊔ D быть не должно.
+# =============================================================================
+
+toi:OM2UnionShape a sh:NodeShape ;
+  sh:targetClass toi:OntologyMorphism ;
+  sh:sparql [
+    sh:message "OM-2 (объединение) нарушено: m(C ⊔ D) ≠ m(C) ⊔ m(D) для некоторых C, D" ;
+    sh:severity sh:Violation ;
+    sh:prefixes <http://example.org/toi/prefixes> ;
+    sh:select """
+      SELECT $this ?C ?D ?mC ?mD ?mUnion ?expectedMUnion
+      WHERE {
+        # Отображение C → m(C)
+        $this toi:hasMapping ?mapC .
+        ?mapC toi:sourceConcept ?C ;
+              toi:targetConcept ?mC .
+
+        # Отображение D → m(D)
+        $this toi:hasMapping ?mapD .
+        ?mapD toi:sourceConcept ?D ;
+              toi:targetConcept ?mD .
+
+        # C ⊔ D
+        ?CUnion toi:unionOf ?listCD .
+        ?listCD rdf:first ?C ;
+                rdf:rest/rdf:first ?D .
+
+        # Ожидаемое m(C ⊔ D) = m(C) ⊔ m(D)
+        ?expectedMUnion toi:unionOf ?listMCMD .
+        ?listMCMD rdf:first ?mC ;
+                  rdf:rest/rdf:first ?mD .
+
+        # Фактическое m(C ⊔ D)
+        $this toi:hasMapping ?mapUnion .
+        ?mapUnion toi:sourceConcept ?CUnion ;
+                  toi:targetConcept ?mUnion .
+
+        # Проверка равенства
+        FILTER (?mUnion != ?expectedMUnion)
+      }
+    """ ;
+  ] .
+
+# =============================================================================
+# Дополнительная форма для проверки корректности отображения объединения
+# =============================================================================
+toi:OM2UnionCompletenessShape a sh:NodeShape ;
+  sh:targetClass toi:OntologyMorphism ;
+  sh:sparql [
+    sh:message "OM-2 (объединение): отображение для C ⊔ D отсутствует" ;
+    sh:severity sh:Violation ;
+    sh:prefixes <http://example.org/toi/prefixes> ;
+    sh:select """
+      SELECT $this ?CUnion
+      WHERE {
+        # Существует объединение C ⊔ D
+        ?CUnion a owl:Class ;
+                toi:unionOf ?list .
+
+        # Но нет отображения для C ⊔ D
+        FILTER NOT EXISTS {
+          $this toi:hasMapping ?mapUnion .
+          ?mapUnion toi:sourceConcept ?CUnion .
+        }
+      }
+    """ ;
+  ] .
+
+# =============================================================================
+# Контроль корректности самих отображений
+# =============================================================================
+toi:UnionMappingShape a sh:NodeShape ;
+  sh:targetClass toi:Mapping ;
+  sh:property [
+    sh:path toi:sourceConcept ;
+    sh:or (
+      [ sh:class owl:Class ]
+      [ sh:node toi:UnionClassShape ]
+    ) ;
+    sh:minCount 1 ;
+    sh:maxCount 1 ;
+    sh:message "sourceConcept должен быть owl:Class или объединением классов" ;
+  ] .
+
+toi:UnionClassShape a sh:NodeShape ;
+  sh:targetSubjectsOf toi:unionOf ;
+  sh:property [
+    sh:path toi:unionOf ;
+    sh:node toi:RDFListShape ;
+    sh:minCount 1 ;
+    sh:maxCount 1 ;
+  ] .
+
+toi:RDFListShape a sh:NodeShape ;
+  sh:or (
+    [ sh:class rdf:List ; sh:property [ sh:path rdf:first ; sh:minCount 1 ; sh:maxCount 1 ] ]
+    [ sh:hasValue rdf:nil ]
+  ) .

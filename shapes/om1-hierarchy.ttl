@@ -1,0 +1,91 @@
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix toi: <https://smev.ru/toi/ontology#> .
+@prefix om:  <https://smev.ru/toi/om#> .
+
+# =============================================================================
+# SHACL-ограничение OM-1 (сохранение иерархии)
+#
+# Условие: для любых концептов C, D из O₁,
+#   C ⊑ D ⟹ m(C) ⊑ m(D)
+#
+# В RDF-представлении:
+#   m — объект типа toi:OntologyMorphism
+#   toi:mapsConcept — свойство, связывающее исходный концепт с его образом
+#   rdfs:subClassOf — иерархия концептов
+# =============================================================================
+#
+# Данная SHACL-форма проверяет, что для каждого отображения toi:Mapping
+# (пары (C, m(C)) на стороне O₁) выполняется:
+#   если C ⊑ D, то m(C) ⊑ m(D)
+#
+# Реализация: для каждой пары отображений (C → m(C), D → m(D)),
+# если C ⊑ D (через rdfs:subClassOf), то проверяется, что m(C) ⊑ m(D).
+
+oi:OM1HierarchyShape a sh:NodeShape ;
+  sh:targetClass toi:OntologyMorphism ;
+  sh:property [
+    sh:path toi:hasMapping ;
+    sh:qualifiedValueShape [
+      sh:node toi:MappingShape ;
+    ] ;
+    sh:qualifiedMinCount 1 ;
+    sh:message "OM-1 нарушено: существует пара отображений (C→m(C), D→m(D)), где C⊑D, но m(C)⋢m(D)" ;
+    sh:severity sh:Violation ;
+  ] ;
+  sh:sparql [
+    sh:message "OM-1: иерархия концептов не сохраняется отображением m" ;
+    sh:severity sh:Violation ;
+    sh:prefixes <http://example.org/toi/prefixes> ;
+    sh:select """
+      SELECT $this ?C ?D ?mC ?mD
+      WHERE {
+        $this toi:hasMapping ?mapC, ?mapD .
+        ?mapC toi:sourceConcept ?C ;
+              toi:targetConcept ?mC .
+        ?mapD toi:sourceConcept ?D ;
+              toi:targetConcept ?mD .
+        ?C rdfs:subClassOf+ ?D .
+        FILTER NOT EXISTS { ?mC rdfs:subClassOf+ ?mD }
+      }
+    """ ;
+  ] .
+
+toi:MappingShape a sh:NodeShape ;
+  sh:targetClass toi:Mapping ;
+  sh:property [
+    sh:path toi:sourceConcept ;
+    sh:class owl:Class ;
+    sh:minCount 1 ;
+    sh:maxCount 1 ;
+    sh:message "Каждое отображение должно иметь ровно один sourceConcept" ;
+  ] ;
+  sh:property [
+    sh:path toi:targetConcept ;
+    sh:class owl:Class ;
+    sh:minCount 1 ;
+    sh:maxCount 1 ;
+    sh:message "Каждое отображение должно иметь ровно один targetConcept" ;
+  ] .
+
+# Префиксы для SPARQL-запросов
+<http://example.org/toi/prefixes> a owl:Ontology ;
+  sh:declare [
+    sh:namespace "http://www.w3.org/1999/02/22-rdf-syntax-ns#"^^xsd:anyURI ;
+    sh:prefix "rdf" ;
+  ] ;
+  sh:declare [
+    sh:namespace "http://www.w3.org/2000/01/rdf-schema#"^^xsd:anyURI ;
+    sh:prefix "rdfs" ;
+  ] ;
+  sh:declare [
+    sh:namespace "http://www.w3.org/2002/07/owl#"^^xsd:anyURI ;
+    sh:prefix "owl" ;
+  ] ;
+  sh:declare [
+    sh:namespace "https://smev.ru/toi/ontology#"^^xsd:anyURI ;
+    sh:prefix "toi" ;
+  ] .
