@@ -15,26 +15,17 @@ abstract: >-
   Реализован на Scala 3 + Akka Typed, развёртывается в Kubernetes,
   обеспечивает p95-latency < 50 мс при cache-hit.
 authors:
-  - family-names: "Иванов"
-    given-names: "Алексей Петрович"
-    email: "a.ivanov@smev.ru"
-    affiliation: "Межведомственный центр цифровизации (МЦЦ)"
-    orcid: "https://orcid.org/0000-0002-1825-0097"
-  - family-names: "Смирнова"
-    given-names: "Елена Сергеевна"
-    email: "e.smirnova@smev.ru"
-    affiliation: "Межведомственный центр цифровизации (МЦЦ)"
-    orcid: "https://orcid.org/0000-0001-2345-6789"
-  - family-names: "Kuznetsov"
-    given-names: "Dmitry"
-    email: "d.kuznetsov@smev.ru"
-    affiliation: "SMEV Interoperability Lab"
+  - family-names: "Салбиев"
+    given-names: "Алан Тасолтанович"
+    email: "alansalbiev@yandex.ru"
+    affiliation: "ИРЭ РАН"
+    orcid: "https://orcid.org/0009-0005-6185-5664"
   - name: "Команда разработки ASG"
-    email: "asg-team@smev.ru"
+    email: "alansalbiev@yandex.ru"
 version: "1.0.0"
 date-released: "2026-08-15"
-url: "https://github.com/smev/asg"
-repository-code: "https://github.com/smev/asg"
+url: "https://github.com/alansalbiev7/TOI-FORMAL"
+repository-code: "https://github.com/alansalbiev7/TOI-FORMAL"
 keywords:
   - "СМЭВ"
   - "интероперабельность"
@@ -53,23 +44,15 @@ preferred-citation:
   type: article
   title: "ASG: Адаптивный семантический шлюз для интероперабельности государственных информационных систем СМЭВ"
   authors:
-    - family-names: "Иванов"
-      given-names: "Алексей Петрович"
-    - family-names: "Смирнова"
-      given-names: "Елена Сергеевна"
-    - family-names: "Kuznetsov"
-      given-names: "Dmitry"
-  journal: "Труды ИСП РАН"
-  year: 2026
-  volume: 38
-  issue: 2
-  doi: "10.15514/ISPRAS-2026-38-2-7"
+    - family-names: "Салбиев"
+      given-names: "Алан Тасолтанович"
+  doi: "10.5281/zenodo.21905639"
   start: 45
   end: 72
 identifiers:
   - type: doi
-    value: "10.5281/zenodo.1234567"
+    value: "10.5281/zenodo.21905639"
     description: "Концептуальный DOI для всех версий ASG (Zenodo)"
   - type: url
-    value: "https://github.com/smev/asg/releases/tag/v1.0.0"
+    value: "https://github.com/alansalbiev7/TOI-FORMAL/releases/tag/v1.0.0"
     description: "Release v1.0.0"
