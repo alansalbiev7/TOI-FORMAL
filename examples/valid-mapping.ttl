@@ -1,0 +1,7 @@
+@prefix toi: <https://example.org/toi#> .
+@prefix ex: <https://example.org/lab#> .
+ex:m a toi:Mapping ;
+    toi:sourceConcept ex:AccruedIncome ; toi:targetConcept ex:IncomeAccrued ;
+    toi:sourceUnit "RUB" ; toi:targetUnit "RUB" ;
+    toi:sourceMeaning "accrued" ; toi:targetMeaning "accrued" ;
+    toi:profileVersion "lab-1" .

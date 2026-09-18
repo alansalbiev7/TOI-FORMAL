@@ -1,0 +1,7 @@
+# Candidate relation only. No universal equivalence of patient and registry person.
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix reg: <https://example.org/toi-lab/registration#> .
+@prefix health: <https://example.org/toi-lab/healthcare#> .
+reg:PersonRecord skos:relatedMatch health:Patient ;
+  rdfs:comment "Учебный кандидат связи. Для применения нужны идентичность объекта, контекст и согласование"@ru .

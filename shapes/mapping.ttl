@@ -1,0 +1,14 @@
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix toi: <https://example.org/toi#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+# Laboratory structural contract. Does not prove OM/SS for an ontology language.
+toi:MappingShape a sh:NodeShape ;
+    sh:targetClass toi:Mapping ;
+    sh:property [ sh:path toi:sourceConcept ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ] ;
+    sh:property [ sh:path toi:targetConcept ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ] ;
+    sh:property [ sh:path toi:sourceUnit ; sh:minCount 1 ; sh:maxCount 1 ; sh:in ("RUB" "persons") ] ;
+    sh:property [ sh:path toi:targetUnit ; sh:minCount 1 ; sh:maxCount 1 ; sh:in ("RUB" "persons") ] ;
+    sh:property [ sh:path toi:sourceMeaning ; sh:minCount 1 ; sh:maxCount 1 ; sh:in ("accrued" "paid") ] ;
+    sh:property [ sh:path toi:targetMeaning ; sh:minCount 1 ; sh:maxCount 1 ; sh:in ("accrued" "paid") ] ;
+    sh:property [ sh:path toi:profileVersion ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 ] .

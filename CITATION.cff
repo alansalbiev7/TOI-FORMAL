@@ -1,0 +1,19 @@
+cff-version: 1.2.0
+message: "При использовании укажите версию или точный коммит репозитория."
+title: "ТОИ — формальные модели и лабораторное ядро интероперабельности"
+type: software
+authors:
+  - family-names: "Салбиев"
+    given-names: "Алан Тасолтанович"
+url: "https://github.com/alansalbiev7/TOI-FORMAL"
+repository-code: "https://github.com/alansalbiev7/TOI-FORMAL"
+abstract: >-
+  Исследовательские модели к научной редакции монографии
+  «Технология обеспечения интероперабельности». Формальные утверждения
+  Lean 4 и лабораторные проверки данных имеют явно ограниченные области применения.
+keywords:
+  - interoperability
+  - ontologies
+  - Lean 4
+  - formal verification
+license: Apache-2.0

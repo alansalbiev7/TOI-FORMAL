@@ -1,0 +1,413 @@
+# =============================================================================
+# rules.yml — правила алертов Prometheus для ASG (Adaptive Semantic Gateway)
+# -----------------------------------------------------------------------------
+# SLO ASG:
+#   p95 ≤ 500ms, p99 ≤ 1000ms, baseline 1000 RPS / peak 10000 RPS,
+#   availability ≥ 99.5%, cache hit rate ≥ 80%, error rate < 0.5%.
+#
+# HotL-контуры (state machine S0-S3):
+#   S0 Pending → S1 InReview → S2 Resolved → S3 FeedbackSent (см. HotlContour.scala).
+#
+# Приоритеты алертов:
+#   P1 (critical) — page immediately:  ASGDown, ASGHighErrorRate, ASGHighLatencyP99
+#   P2 (warning)  — рабочий день:       ASGHighLatencyP95, ASGLowCacheHitRate, ASGHighCPU
+#   P3 (info)     — наблюдение/тренд:   ASGHotLContourEscalation, ASGSlowResponse
+# =============================================================================
+
+groups:
+  # ───────────────────────────────────────────────────────────────────────────
+  # Группа 1: Доступность сервиса (availability SLO ≥ 99.5%)
+  # ───────────────────────────────────────────────────────────────────────────
+  - name: asg-availability
+    interval: 15s
+    rules:
+      # P1: ASG недоступен — скрейп Prometheus не отвечает 1 минуту.
+      - alert: ASGDown
+        expr: up{job="asg-core"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          priority: P1
+          team: asg-oncall
+          slo: availability
+        annotations:
+          summary: "ASG Core недоступен (instance {{ $labels.instance }})"
+          description: >-
+            Prometheus не может скрейпить /api/v1/metrics на asg-core более 1 минуты.
+            Проверить под/контейнер asg-core, readiness-пробу и сетевую доступность :8080.
+          runbook_url: "https://wiki.smev.ru/asg/runbooks/asg-down"
+
+      # P1: доступность < SLO 99.5% за 5-минутное окно.
+      - alert: ASGLowAvailability
+        expr: |
+          (1 - (
+            sum(rate(asg_grpc_errors_total[5m]))
+            /
+            clamp_min(sum(rate(asg_grpc_requests_total[5m])), 1)
+          )) < 0.995
+        for: 5m
+        labels:
+          severity: critical
+          priority: P1
+          team: asg-oncall
+          slo: availability
+        annotations:
+          summary: "Доступность ASG ниже SLO 99.5% (текущая: {{ $value | humanizePercentage }})"
+          description: >-
+            Доля успешных запросов за 5 минут ниже целевого SLO 99.5%.
+            Проверить SHACL-валидацию, доступность Redis/Jena, наличие throttle.
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Группа 2: Задержки (latency SLO: p95 ≤ 500ms, p99 ≤ 1000ms)
+  # ───────────────────────────────────────────────────────────────────────────
+  - name: asg-latency
+    interval: 15s
+    rules:
+      # P1: p99 > 2000ms — двукратное превышение SLO (1000ms).
+      - alert: ASGHighLatencyP99
+        expr: |
+          histogram_quantile(
+            0.99,
+            sum by (le) (rate(asg_grpc_request_duration_ms_bucket[5m]))
+          ) > 2000
+        for: 5m
+        labels:
+          severity: critical
+          priority: P1
+          team: asg-oncall
+          slo: latency
+        annotations:
+          summary: "p99 задержка ASG > 2000ms (SLO 1000ms)"
+          description: >-
+            99-й перцентиль задержки gRPC-запросов {{ $value }}ms превышает SLO 1000ms
+            в течение 5 минут. Возможные причины: SHACL-timeout, насыщение HikariCP,
+            долгие SPARQL-запросы к Jena.
+          runbook_url: "https://wiki.smev.ru/asg/runbooks/high-latency-p99"
+
+      # P2: p95 > 800ms — превышение SLO (500ms) на 60%.
+      - alert: ASGHighLatencyP95
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (rate(asg_grpc_request_duration_ms_bucket[5m]))
+          ) > 800
+        for: 5m
+        labels:
+          severity: warning
+          priority: P2
+          team: asg-oncall
+          slo: latency
+        annotations:
+          summary: "p95 задержка ASG > 800ms (SLO 500ms)"
+          description: >-
+            95-й перцентиль задержки {{ $value }}ms превышает SLO 500ms. Проверить
+            cache_hit_rate и наличие эскалаций в HotL-контуры.
+
+      # P3: p50 > 200ms — медленный отклик в пределах SLO, но выше нормы.
+      - alert: ASGSlowResponse
+        expr: |
+          histogram_quantile(
+            0.50,
+            sum by (le) (rate(asg_grpc_request_duration_ms_bucket[5m]))
+          ) > 200
+        for: 10m
+        labels:
+          severity: info
+          priority: P3
+          team: asg-ops
+          slo: latency
+        annotations:
+          summary: "Медианная задержка ASG > 200ms в течение 10 минут"
+          description: >-
+            p50 задержка стабильно выше 200ms — возможна деградация SPARQL-кэша
+            Jena или рост SHACL-нарушений. Не критично, но требует анализа тренда.
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Группа 3: Пропускная способность (throughput SLO: 1000 RPS baseline, 10000 RPS peak)
+  # ───────────────────────────────────────────────────────────────────────────
+  - name: asg-throughput
+    interval: 15s
+    rules:
+      # P2: RPS близок к глобальному лимиту 10000 (защита от DDoS в asg.ratelimit).
+      - alert: ASGApproachingRPSLimit
+        expr: sum(rate(asg_translate_requests_total[1m])) > 8000
+        for: 5m
+        labels:
+          severity: warning
+          priority: P2
+          team: asg-oncall
+          slo: throughput
+        annotations:
+          summary: "RPS ASG приближается к лимиту 10000 (текущий: {{ $value | humanize100 }})"
+          description: >-
+            Текущий RPS стабильно выше 8000 — риск троттлинга (asg.ratelimit.global-limit).
+            Проверить HPA и наличие аномального трафика от поставщиков СМЭВ.
+
+      # P3: HPA упёрся в maxReplicas — нагрузка выше ресурса кластера.
+      - alert: ASGHPAMaxedOut
+        expr: |
+          kube_hpa_status_current_replicas{hpa=~".*asg.*"}
+          == kube_hpa_spec_max_replicas{hpa=~".*asg.*"}
+        for: 10m
+        labels:
+          severity: info
+          priority: P3
+          team: asg-ops
+          slo: throughput
+        annotations:
+          summary: "HPA asg-core достиг maxReplicas ({{ $value }} подов)"
+          description: >-
+            Горизонтальный автоскейлер упёрся в потолок — нагрузка превышает
+            ресурс кластера. Рассмотреть увеличение maxReplicas или resources.limits.
+
+      # P3: RPS ниже baseline 1000 — возможна деградация upstream-провайдеров.
+      - alert: ASGLowThroughput
+        expr: sum(rate(asg_translate_requests_total[5m])) < 100
+        for: 15m
+        labels:
+          severity: info
+          priority: P3
+          team: asg-ops
+          slo: throughput
+        annotations:
+          summary: "RPS ASG ниже 100 (ожидаемый baseline 1000) в течение 15 минут"
+          description: >-
+            Возможно, нарушена маршрутизация от Ingress или упал поставщик СМЭВ.
+            Не является аварией, но требует проверки.
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Группа 4: Ошибки и кэш (error_rate < 0.5%, cache_hit_rate ≥ 80%)
+  # ───────────────────────────────────────────────────────────────────────────
+  - name: asg-errors
+    interval: 15s
+    rules:
+      # P1: error_rate > 5% — 10-кратное превышение SLO (0.5%).
+      - alert: ASGHighErrorRate
+        expr: |
+          (
+            sum(rate(asg_grpc_errors_total[5m]))
+            /
+            clamp_min(sum(rate(asg_grpc_requests_total[5m])), 1)
+          ) > 0.05
+        for: 2m
+        labels:
+          severity: critical
+          priority: P1
+          team: asg-oncall
+          slo: errors
+        annotations:
+          summary: "Высокий уровень ошибок ASG > 5% (SLO 0.5%)"
+          description: >-
+            Доля ошибочных запросов {{ $value | humanizePercentage }}.
+            Проверить SHACL-валидацию (asg_shacl_violations_total), доступность
+            Redis (cache-miss → БД) и Jena Fuseki.
+          runbook_url: "https://wiki.smev.ru/asg/runbooks/high-error-rate"
+
+      # P2: cache_hit_rate < 70% — SLO breached (цель 80%).
+      - alert: ASGLowCacheHitRate
+        expr: |
+          (
+            sum(rate(asg_cache_hits_total[10m]))
+            /
+            clamp_min(
+              sum(rate(asg_cache_hits_total[10m]))
+              + sum(rate(asg_cache_misses_total[10m])),
+              1
+            )
+          ) < 0.70
+        for: 10m
+        labels:
+          severity: warning
+          priority: P2
+          team: asg-oncall
+          slo: cache
+        annotations:
+          summary: "Cache hit rate ASG < 70% (SLO 80%)"
+          description: >-
+            Доля попаданий в LRU-кэш Redis ниже целевого SLO 80%.
+            Возможные причины: рост уникальных ontology+concept пар,
+            инвалидация преинстанциированных маппингов, истечение TTL (по умолчанию 300с).
+
+      # P2: рост SHACL-нарушений — проблема с шейпами или онтологиями.
+      - alert: ASGHighShaclViolations
+        expr: sum(rate(asg_shacl_violations_total[5m])) > 1
+        for: 5m
+        labels:
+          severity: warning
+          priority: P2
+          team: asg-data
+          slo: errors
+        annotations:
+          summary: "Высокий уровень SHACL-нарушений (> 1/сек по шейпу {{ $labels.shape }})"
+          description: >-
+            Растёт число запросов, не прошедших SHACL-валидацию. Проверить
+            свежесть TTL-файлов шейпов в /etc/asg/shacl и метаданные онтологий.
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Группа 5: HotL-контуры (state machine S0-S3, см. HotlContour.scala)
+  #   S0 Pending → S1 InReview → S2 Resolved → S3 FeedbackSent
+  #   Эскалация контур-1 → контур-2 → контур-3 (оператор СМЭВ).
+  # ───────────────────────────────────────────────────────────────────────────
+  - name: asg-hotl
+    interval: 15s
+    rules:
+      # P3: рост эскалаций в HotL-контуры (10 минут).
+      - alert: ASGHotLContourEscalation
+        expr: sum(increase(asg_hotl_escalations_total[10m])) > 5
+        for: 1m
+        labels:
+          severity: info
+          priority: P3
+          team: asg-data
+          slo: hotl
+        annotations:
+          summary: "Рост эскалаций в HotL-контур ({{ $labels.contour }})"
+          description: >-
+            За последние 10 минут зафиксировано {{ $value }} эскалаций в контур
+            {{ $labels.contour }}. Проверить качество маппингов онтологий и
+            пороговые значения в asg.hotl.contour-1/2/3.
+          runbook_url: "https://wiki.smev.ru/asg/runbooks/hotl-escalation"
+
+      # P2: задача оператора в очереди S0 > 30 минут (operator-timeout=1h, но это ранний сигнал).
+      - alert: ASGHotLOperatorQueueStuck
+        expr: asg_hotl_queue_size{state="S0"} > 0
+        for: 30m
+        labels:
+          severity: warning
+          priority: P2
+          team: asg-ops
+          slo: hotl
+        annotations:
+          summary: "Задача в очереди оператора S0 > 30 минут"
+          description: >-
+            Эскалированная задача (state S0=Pending) не взята оператором в работу.
+            Проверить консоль оператора и уведомления (asg.hotl.contour-3.notify).
+
+      # P2: высокая доля эскалаций в контур 3 (оператор) — качество автомаппинга низкое.
+      - alert: ASGHighContour3Ratio
+        expr: |
+          (
+            sum(rate(asg_hotl_escalations_total{contour="contour-3"}[1h]))
+            /
+            clamp_min(sum(rate(asg_translate_requests_total[1h])), 1)
+          ) > 0.02
+        for: 15m
+        labels:
+          severity: warning
+          priority: P2
+          team: asg-data
+          slo: hotl
+        annotations:
+          summary: "Доля эскалаций оператору > 2% — качество автомаппинга низкое"
+          description: >-
+            Больше 2% запросов эскалируется на ручной разбор. MatcherAgent
+            нуждается в дообучении (LearnerAgent reward signal).
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Группа 6: Инфраструктура (Redis, PostgreSQL, Node, диск)
+  # ───────────────────────────────────────────────────────────────────────────
+  - name: infrastructure
+    interval: 15s
+    rules:
+      # P2: CPU > 80% — риск деградации p95-задержки.
+      - alert: ASGHighCPU
+        expr: |
+          (1 - avg by (instance) (rate(node_cpu_seconds_total{job="node",mode="idle"}[5m]))) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+          priority: P2
+          team: asg-ops
+          slo: infrastructure
+        annotations:
+          summary: "CPU утилизация > 80% (instance {{ $labels.instance }}: {{ $value }}%)"
+          description: >-
+            Утилизация CPU выше 80% в течение 5 минут — возможна деградация
+            p95-задержки. Проверить HPA и presence GC-пауз в JVM.
+
+      # P1: Redis недоступен — кэш-промахи пойдут в PostgreSQL/Jena.
+      - alert: RedisDown
+        expr: redis_up{job="redis"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          priority: P1
+          team: asg-oncall
+          slo: infrastructure
+        annotations:
+          summary: "Redis недоступен (instance {{ $labels.instance }})"
+          description: >-
+            LRU-кэш asg-core недоступен — все запросы пойдут в PostgreSQL/Jena.
+            Ожидается резкий рост p99-задержки и cache_hit_rate → 0.
+
+      # P1: PostgreSQL недоступен — маппинги и аудит не читаются/пишутся.
+      - alert: PostgresDown
+        expr: pg_up{job="postgres"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          priority: P1
+          team: asg-oncall
+          slo: infrastructure
+        annotations:
+          summary: "PostgreSQL недоступен (instance {{ $labels.instance }})"
+          description: >-
+            БД маппингов и аудита недоступна — asg-core не сможет читать
+            онтологии и писать журнал аудита СМЭВ.
+
+      # P2: Redis близок к maxmemory (allkeys-lru начнёт вытеснять).
+      - alert: RedisMemoryNearLimit
+        expr: |
+          (
+            redis_memory_used_bytes{job="redis"}
+            / redis_memory_max_bytes{job="redis"}
+          ) > 0.90
+        for: 5m
+        labels:
+          severity: warning
+          priority: P2
+          team: asg-ops
+          slo: infrastructure
+        annotations:
+          summary: "Redis memory > 90% от maxmemory (instance {{ $labels.instance }})"
+          description: >-
+            Redis близок к лимиту maxmemory — начнётся активное вытеснение (allkeys-lru).
+            Рассмотреть увеличение maxmemory или TTL кэша.
+
+      # P2: PostgreSQL connections насыщение (HikariCP max-pool=20, max_connections=100).
+      - alert: PostgresConnectionPoolSaturation
+        expr: |
+          (
+            sum(pg_stat_activity_count{job="postgres"})
+            / pg_settings_max_connections{job="postgres"}
+          ) > 0.80
+        for: 5m
+        labels:
+          severity: warning
+          priority: P2
+          team: asg-ops
+          slo: infrastructure
+        annotations:
+          summary: "Подключения PostgreSQL > 80% от max_connections"
+          description: >-
+            Пул соединений близок к насыщению — проверить HikariCP max-pool-size
+            и наличие утечек (leak-detection-threshold=60s в asg.postgres.hikari).
+
+      # P2: диск заполнится в течение 24 часов (TSDB / логи / badger).
+      - alert: DiskWillFillIn24h
+        expr: |
+          predict_linear(
+            node_filesystem_avail_bytes{job="node",fstype!~"tmpfs|overlay"}[1h],
+            24 * 3600
+          ) < 0
+        for: 10m
+        labels:
+          severity: warning
+          priority: P2
+          team: asg-ops
+          slo: infrastructure
+        annotations:
+          summary: "Диск {{ $labels.mountpoint }} заполнится в течение 24 часов"
+          description: >-
+            По текущей скорости записи диск на {{ $labels.instance }}:{{ $labels.mountpoint }}
+            будет полным через 24 часа. Проверить retention Prometheus (15d) и логи Loki.

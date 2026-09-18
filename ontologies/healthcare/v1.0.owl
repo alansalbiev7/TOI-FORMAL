@@ -1,0 +1,7 @@
+# Synthetic example in Turtle syntax; not a departmental ontology or a legal classification.
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix ex: <https://example.org/toi-lab/healthcare#> .
+ex:ontology a owl:Ontology ; rdfs:comment "Синтетический пример; внешние импорты не используются"@ru .
+ex:Patient a owl:Class ; rdfs:label "Пациент в учебном процессе"@ru .
+ex:Observation a owl:Class ; rdfs:label "Учебное наблюдение"@ru .

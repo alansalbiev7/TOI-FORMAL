@@ -1,0 +1,333 @@
+---
+# ansible/playbook.yml — настройка сервера ASG (single-node Docker-compose install)
+# Цели:
+#   1. Установить Docker CE + docker-compose-plugin + базовые утилиты.
+#   2. Настроить firewall (UFW): открыть 22/80/443, остальное закрыть.
+#   3. Развернуть docker-compose.yml из репозитория проекта.
+#   4. Настроить logrotate для Docker-логов и приложения ASG.
+#   5. Зарегистрировать systemd-unit для docker compose up (автозапуск).
+#
+# Запуск:
+#   ansible-playbook -i inventory.ini playbook.yml -u <sudo_user> --become
+# ─────────────────────────────────────────────────────────────────────────────
+
+- name: Базовая настройка сервера ASG (Docker + firewall + logrotate + deploy)
+  hosts: asg_servers
+  become: true
+  gather_facts: true
+
+  vars:
+    # Версии пакетов (фиксируем для воспроизводимости)
+    docker_version: "5:27.3.1*"
+    docker_compose_version: "2.29.7"
+    # Рабочий каталог ASG
+    asg_home: "/opt/asg"
+    asg_user: "asg"
+    asg_group: "asg"
+    # Лог-ротация
+    logrotate_interval: "daily"
+    logrotate_keep: 14
+
+  pre_tasks:
+    - name: Обновить apt-кэш
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Установить базовые утилиты
+      ansible.builtin.apt:
+        name:
+          - curl
+          - wget
+          - git
+          - vim
+          - htop
+          - jq
+          - python3
+          - python3-pip
+          - python3-docker
+          - ca-certificates
+          - gnupg
+          - lsb-release
+          - ufw
+          - unattended-upgrades
+          - apt-transport-https
+          - software-properties-common
+          - net-tools
+          - dnsutils
+        state: present
+
+    - name: Создать группу asg
+      ansible.builtin.group:
+        name: "{{ asg_group }}"
+        gid: 10001
+        state: present
+
+    - name: Создать пользователя asg (для работы docker-compose без root)
+      ansible.builtin.user:
+        name: "{{ asg_user }}"
+        uid: 10001
+        group: "{{ asg_group }}"
+        home: "{{ asg_home }}"
+        shell: /bin/bash
+        groups: docker
+        append: true
+        create_home: true
+
+  tasks:
+
+    # ─── 1. Установка Docker CE ──────────────────────────────────────────
+    - name: Добавить GPG-ключ официального Docker-репозитория
+      ansible.builtin.apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+        keyring: /etc/apt/keyrings/docker.gpg
+
+    - name: Добавить Docker-репозиторий для Ubuntu
+      ansible.builtin.apt_repository:
+        repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+        state: present
+        filename: docker
+
+    - name: Установить Docker CE + compose plugin + containerd
+      ansible.builtin.apt:
+        name:
+          - "docker-ce={{ docker_version }}"
+          - "docker-ce-cli={{ docker_version }}"
+          - containerd.io
+          - docker-buildx-plugin
+          - "docker-compose-plugin={{ docker_compose_version }}-*"
+        state: present
+      notify: restart docker
+
+    - name: Создать конфигурацию daemon.json (log-driver=json-file, max-size=50m)
+      ansible.builtin.copy:
+        dest: /etc/docker/daemon.json
+        content: |
+          {
+            "log-driver": "json-file",
+            "log-opts":   { "max-size": "50m", "max-file": "5" },
+            "live-restore": true,
+            "storage-driver": "overlay2",
+            "userns-remap": "default",
+            "icc": false,
+            "no-new-privileges": true,
+            "default-ulimits": {
+              "nofile":   { "Hard": 65536, "Soft": 65536 },
+              "nproc":    { "Hard": 65535, "Soft": 65535 }
+            }
+        mode: "0644"
+        owner: root
+        group: root
+      notify: restart docker
+
+    - name: Включить и запустить docker.service
+      ansible.builtin.systemd:
+        name: docker
+        enabled: true
+        state: started
+        daemon_reload: true
+
+    - name: Добавить пользователя asg в группу docker
+      ansible.builtin.user:
+        name: "{{ asg_user }}"
+        groups: docker
+        append: true
+
+    # ─── 2. Firewall (UFW) ────────────────────────────────────────────────
+    - name: "Установить политику по-умолчанию: deny incoming"
+      ansible.builtin.ufw:
+        state: enabled
+        policy: deny
+        direction: incoming
+
+    - name: Открыть SSH (22) — с rate-limit (защита от brute-force)
+      ansible.builtin.ufw:
+        rule: limit
+        port: 22
+        proto: tcp
+        comment: "SSH with brute-force protection"
+
+    - name: Открыть HTTP (80)
+      ansible.builtin.ufw:
+        rule: allow
+        port: 80
+        proto: tcp
+        comment: "ASG HTTP (ingress)"
+
+    - name: Открыть HTTPS (443)
+      ansible.builtin.ufw:
+        rule: allow
+        port: 443
+        proto: tcp
+        comment: "ASG HTTPS (ingress)"
+
+    - name: Запретить все остальные входящие (явно)
+      ansible.builtin.ufw:
+        rule: deny
+        port: ""
+        log: true
+
+    # ─── 3. Развернуть docker-compose.yml ──────────────────────────────────
+    - name: Создать каталог /opt/asg
+      ansible.builtin.file:
+        path: "{{ asg_home }}"
+        state: directory
+        owner: "{{ asg_user }}"
+        group: "{{ asg_group }}"
+        mode: "0750"
+
+    - name: Создать подкаталоги для конфигурации и волюмов
+      ansible.builtin.file:
+        path: "{{ asg_home }}/{{ item }}"
+        state: directory
+        owner: "{{ asg_user }}"
+        group: "{{ asg_group }}"
+        mode: "0750"
+      loop:
+        - config
+        - shapes
+        - ontologies
+        - postgres/init
+        - jena/config
+        - prometheus
+        - grafana/provisioning/datasources
+        - grafana/provisioning/dashboards
+        - grafana/dashboards
+        - loki
+
+    - name: Скопировать docker-compose.yml (из репозитория)
+      ansible.builtin.copy:
+        src: ../docker-compose.yml
+        dest: "{{ asg_home }}/docker-compose.yml"
+        owner: "{{ asg_user }}"
+        group: "{{ asg_group }}"
+        mode: "0640"
+        backup: true
+
+    - name: Скопировать .env (из шаблона, НЕ в репозитории)
+      ansible.builtin.template:
+        src: env.j2
+        dest: "{{ asg_home }}/.env"
+        owner: "{{ asg_user }}"
+        group: "{{ asg_group }}"
+        mode: "0600"
+      no_log: true
+
+    - name: Скопировать application.conf для asg-core
+      ansible.builtin.copy:
+        src: ../asg-config.yaml
+        dest: "{{ asg_home }}/config/application.conf"
+        owner: "{{ asg_user }}"
+        group: "{{ asg_group }}"
+        mode: "0640"
+
+    # ─── 4. Systemd-unit для `docker compose up` (автозапуск) ────────────
+    - name: Установить systemd-unit для asg-compose
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/asg-compose.service
+        content: |
+          [Unit]
+          Description=ASG docker-compose stack
+          Requires=docker.service
+          After=docker.service network-online.target
+          Wants=network-online.target
+
+          [Service]
+          Type=oneshot
+          RemainAfterExit=yes
+          WorkingDirectory={{ asg_home }}
+          EnvironmentFile={{ asg_home }}/.env
+          ExecStartPre=/usr/bin/docker compose --env-file {{ asg_home }}/.env -f {{ asg_home }}/docker-compose.yml pull --quiet
+          ExecStart=/usr/bin/docker compose --env-file {{ asg_home }}/.env -f {{ asg_home }}/docker-compose.yml up -d --remove-orphans
+          ExecStop=/usr/bin/docker compose --env-file {{ asg_home }}/.env -f {{ asg_home }}/docker-compose.yml down
+          TimeoutStartSec=300
+          TimeoutStopSec=120
+          User={{ asg_user }}
+          Group={{ asg_group }}
+
+          [Install]
+          WantedBy=multi-user.target
+        mode: "0644"
+        owner: root
+        group: root
+
+    - name: Перезагрузить systemd, включить и запустить asg-compose
+      ansible.builtin.systemd:
+        name: asg-compose
+        daemon_reload: true
+        enabled: true
+        state: restarted
+
+    # ─── 5. Настроить logrotate для ASG-логов ─────────────────────────────
+    - name: Создать каталог /var/log/asg (если примонтирован с хоста)
+      ansible.builtin.file:
+        path: /var/log/asg
+        state: directory
+        owner: "{{ asg_user }}"
+        group: "{{ asg_group }}"
+        mode: "0750"
+
+    - name: Настроить logrotate для /var/log/asg/*.log
+      ansible.builtin.template:
+        src: logrotate.j2
+        dest: /etc/logrotate.d/asg
+        owner: root
+        group: root
+        mode: "0644"
+
+    # ─── 6. Автоматическое обновление безопасности (unattended-upgrades) ───
+    - name: Настроить unattended-upgrades (только security-updates)
+      ansible.builtin.copy:
+        dest: /etc/apt/apt.conf.d/50unattended-upgrades
+        content: |
+          Unattended-Upgrade::Allowed-Origins {
+            "${distro_id}:${distro_codename}-security";
+          };
+          Unattended-Upgrade::Automatic-Reboot "false";
+          Unattended-Upgrade::Automatic-Reboot-Time "04:00";
+          Unattended-Upgrade::Remove-Unused-Dependencies "true";
+        mode: "0644"
+
+    - name: Включить периодическое выполнение apt
+      ansible.builtin.copy:
+        dest: /etc/apt/apt.conf.d/20auto-upgrades
+        content: |
+          APT::Periodic::Update-Package-Lists "1";
+          APT::Periodic::Download-Upgradeable-Packages "1";
+          APT::Periodic::AutocleanInterval "7";
+          APT::Periodic::Unattended-Upgrade "1";
+        mode: "0644"
+
+  handlers:
+    - name: restart docker
+      ansible.builtin.systemd:
+        name: docker
+        state: restarted
+
+  post_tasks:
+    - name: Проверить, что ASG-стек запущен (docker compose ps)
+      ansible.builtin.command:
+        cmd: "docker compose -f {{ asg_home }}/docker-compose.yml ps --format json"
+      become_user: "{{ asg_user }}"
+      register: compose_ps
+      changed_when: false
+
+    - name: Показать статус стека
+      ansible.builtin.debug:
+        var: compose_ps.stdout_lines
+
+    - name: Проверить health asg-core через 30 секунд
+      ansible.builtin.uri:
+        url: "http://localhost:8080/api/v1/health"
+        method: GET
+        return_content: true
+        status_code: 200
+      register: health
+      retries: 6
+      delay: 10
+      until: health.status == 200
+
+    - name: Показать ответ health-endpoint
+      ansible.builtin.debug:
+        var: health.content

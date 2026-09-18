@@ -1,0 +1,303 @@
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix dct: <http://purl.org/dc/terms/> .
+@prefix : <https://asg.smev.ru/ont/registration/v2.0/> .
+
+# =============================================================================
+# ontology-b.owl
+# Тестовая онтология B (целевая, контрпарная к A) для k6-фикстур.
+# Тот же домен, но другая номенклатура классов и свойств — для тестирования
+# matcher-агента на способность выявлять семантические эквиваленты.
+#
+# Соответствие классов (используется в expected-mappings.json):
+#   A:Person           → B:Citizen
+#   A:Address          → B:Location
+#   A:Registration     → B:RegistryRecord
+#   A:Residence        → B:LivingPlace
+#   A:Organization     → B:Agency
+# =============================================================================
+
+# --- Декларация онтологии ----------------------------------------------------
+
+<https://asg.smev.ru/ont/registration/v2.0> a owl:Ontology ;
+    owl:versionIRI <https://asg.smev.ru/ont/registration/v2.0.0> ;
+    owl:versionInfo "2.0.0"^^xsd:string ;
+    dct:title "Онтология регистрационного учёта (B, контрпарная)"@ru ;
+    dct:description "Контрпарная онтология B для тестирования matcher-агента ASG. Тот же домен, что и A, но другая номенклатура."@ru ;
+    dct:creator "Салбьев А. Т."@ru ;
+    dct:created "2026-08-13"^^xsd:date ;
+    dct:license <https://creativecommons.org/licenses/by/4.0/> ;
+    rdfs:label "Онтология B: Регистрация (контрпарная)"@ru ;
+    rdfs:comment "Используется в связке с ontology-a.owl для тестирования способности matcher-агента выявлять семантические эквиваленты при различии имён."@ru .
+
+# =============================================================================
+# 1. КЛАССЫ (5 шт., отличные имена от A)
+# =============================================================================
+
+:Citizen a owl:Class ;
+    rdfs:subClassOf owl:Thing ;
+    rdfs:label "Гражданин"@ru ;
+    rdfs:comment "Субъект права — физическое лицо, поставленное на учёт. Семантически эквивалентен A:Person. Идентифицируется СНИЛС/ИНН."@ru ;
+    rdfs:isDefinedBy <https://asg.smev.ru/ont/registration/v2.0> ;
+    owl:equivalentClass <https://asg.smev.ru/ont/registration/v1.0/Person> .
+
+:Location a owl:Class ;
+    rdfs:subClassOf owl:Thing ;
+    rdfs:label "Местоположение"@ru ;
+    rdfs:comment "Географический адрес, кодируемый по КЛАДР или ФИАС. Семантически эквивалентен A:Address. Содержит субъект РФ, муниципалитет, населённый пункт, улицу, дом."@ru ;
+    rdfs:isDefinedBy <https://asg.smev.ru/ont/registration/v2.0> ;
+    owl:equivalentClass <https://asg.smev.ru/ont/registration/v1.0/Address> .
+
+:RegistryRecord a owl:Class ;
+    rdfs:subClassOf owl:Thing ;
+    rdfs:label "Запись реестра"@ru ;
+    rdfs:comment "Запись в реестре регистрационного учёта. Семантически эквивалентен A:Registration. Содержит дату, статус, орган, выдавший документ."@ru ;
+    rdfs:isDefinedBy <https://asg.smev.ru/ont/registration/v2.0> ;
+    owl:equivalentClass <https://asg.smev.ru/ont/registration/v1.0/Registration> .
+
+:LivingPlace a owl:Class ;
+    rdfs:subClassOf owl:Thing ;
+    rdfs:label "Место проживания"@ru ;
+    rdfs:comment "Фактическое место проживания гражданина. Семантически эквивалентен A:Residence. Может быть постоянным или временным."@ru ;
+    rdfs:isDefinedBy <https://asg.smev.ru/ont/registration/v2.0> ;
+    owl:equivalentClass <https://asg.smev.ru/ont/registration/v1.0/Residence> .
+
+:Agency a owl:Class ;
+    rdfs:subClassOf owl:Thing ;
+    rdfs:label "Ведомство"@ru ;
+    rdfs:comment "Государственный орган или юридическое лицо, осуществляющее регистрационный учёт. Семантически эквивалентен A:Organization."@ru ;
+    rdfs:isDefinedBy <https://asg.smev.ru/ont/registration/v2.0> ;
+    owl:equivalentClass <https://asg.smev.ru/ont/registration/v1.0/Organization> .
+
+# Все 5 классов попарно дизъюнктны (соответствует онтологии A)
+[ a owl:AllDisjointClasses ;
+  owl:members ( :Citizen :Location :RegistryRecord :LivingPlace :Agency ) ] .
+
+# =============================================================================
+# 2. ОБЪЕКТНЫЕ СВОЙСТВА (4 шт., отличные имена от A)
+# =============================================================================
+
+:locatedAt a owl:ObjectProperty ;
+    rdfs:subPropertyOf owl:topObjectProperty ;
+    rdfs:label "расположен по"@ru ;
+    rdfs:comment "Связывает гражданина или ведомство с их местоположением. Семантически эквивалентен A:hasAddress."@ru ;
+    rdfs:domain [ a owl:Class ;
+                  owl:unionOf ( :Citizen :Agency ) ] ;
+    rdfs:range  :Location ;
+    owl:equivalentProperty <https://asg.smev.ru/ont/registration/v1.0/hasAddress> ;
+    rdfs:isDefinedBy <https://asg.smev.ru/ont/registration/v2.0> .
+
+:registeredBy a owl:ObjectProperty ;
+    rdfs:subPropertyOf owl:topObjectProperty ;
+    rdfs:label "зарегистрирован посредством"@ru ;
+    rdfs:comment "Связывает гражданина с записью реестра. Семантически эквивалентен A:hasRegistration."@ru ;
+    rdfs:domain :Citizen ;
+    rdfs:range  :RegistryRecord ;
+    owl:inverseOf :recordOf ;
+    owl:equivalentProperty <https://asg.smev.ru/ont/registration/v1.0/hasRegistration> ;
+    rdfs:isDefinedBy <https://asg.smev.ru/ont/registration/v2.0> .
+
+:livesAt a owl:ObjectProperty ;
+    rdfs:subPropertyOf owl:topObjectProperty ;
+    rdfs:label "проживает в"@ru ;
+    rdfs:comment "Связывает гражданина с его местом проживания. Семантически эквивалентен A:hasResidence."@ru ;
+    rdfs:domain :Citizen ;
+    rdfs:range  :LivingPlace ;
+    owl:equivalentProperty <https://asg.smev.ru/ont/registration/v1.0/hasResidence> ;
+    rdfs:isDefinedBy <https://asg.smev.ru/ont/registration/v2.0> .
+
+:issuedByAgency a owl:ObjectProperty ;
+    rdfs:subPropertyOf owl:topObjectProperty ;
+    rdfs:label "выдано ведомством"@ru ;
+    rdfs:comment "Связывает запись реестра с ведомством, её оформившим. Семантически эквивалентен A:issuedBy."@ru ;
+    rdfs:domain :RegistryRecord ;
+    rdfs:range  :Agency ;
+    owl:equivalentProperty <https://asg.smev.ru/ont/registration/v1.0/issuedBy> ;
+    rdfs:isDefinedBy <https://asg.smev.ru/ont/registration/v2.0> .
+
+# Обратное свойство к registeredBy
+:recordOf a owl:ObjectProperty ;
+    rdfs:subPropertyOf owl:topObjectProperty ;
+    rdfs:label "запись о гражданине"@ru ;
+    rdfs:comment "Обратное свойство к registeredBy. Связывает запись реестра с гражданином."@ru ;
+    rdfs:domain :RegistryRecord ;
+    rdfs:range  :Citizen ;
+    rdfs:isDefinedBy <https://asg.smev.ru/ont/registration/v2.0> .
+
+# =============================================================================
+# 3. СВОЙСТВА ДАННЫХ (3 шт., отличные имена от A)
+# =============================================================================
+
+:name a owl:DatatypeProperty ;
+    rdfs:subPropertyOf owl:topDataProperty ;
+    rdfs:label "имя"@ru ;
+    rdfs:comment "Полное имя гражданина в формате «Фамилия Имя Отчество». Семантически эквивалентен A:fullName."@ru ;
+    rdfs:domain :Citizen ;
+    rdfs:range  xsd:string ;
+    owl:equivalentProperty <https://asg.smev.ru/ont/registration/v1.0/fullName> ;
+    rdfs:isDefinedBy <https://asg.smev.ru/ont/registration/v2.0> .
+
+:regionCode a owl:DatatypeProperty ;
+    rdfs:subPropertyOf owl:topDataProperty ;
+    rdfs:label "код субъекта"@ru ;
+    rdfs:comment "Код субъекта РФ по ГОСТ 7.67-2003. Семантически эквивалентен A:region."@ru ;
+    rdfs:domain :Location ;
+    rdfs:range  xsd:string ;
+    owl:equivalentProperty <https://asg.smev.ru/ont/registration/v1.0/region> ;
+    rdfs:isDefinedBy <https://asg.smev.ru/ont/registration/v2.0> .
+
+:effectiveDate a owl:DatatypeProperty ;
+    rdfs:subPropertyOf owl:topDataProperty ;
+    rdfs:label "дата вступления в силу"@ru ;
+    rdfs:comment "Дата вступления в силу записи реестра в формате YYYY-MM-DD. Семантически эквивалентен A:startDate."@ru ;
+    rdfs:domain :RegistryRecord ;
+    rdfs:range  xsd:date ;
+    owl:equivalentProperty <https://asg.smev.ru/ont/registration/v1.0/startDate> ;
+    rdfs:isDefinedBy <https://asg.smev.ru/ont/registration/v2.0> .
+
+# Дополнительные свойства данных (для полноты картины)
+:recordStatus a owl:DatatypeProperty ;
+    rdfs:label "статус записи"@ru ;
+    rdfs:comment "Статус записи реестра: действующий, аннулирован, истёк."@ru ;
+    rdfs:domain :RegistryRecord ;
+    rdfs:range  xsd:string .
+
+:placeType a owl:DatatypeProperty ;
+    rdfs:label "тип места"@ru ;
+    rdfs:comment "Тип места проживания: постоянное, временное."@ru ;
+    rdfs:domain :LivingPlace ;
+    rdfs:range  xsd:string .
+
+# =============================================================================
+# 4. ОГРАНИЧЕНИЯ КАРДИНАЛЬНОСТИ
+# =============================================================================
+
+:Citizen rdfs:subClassOf [
+    a owl:Restriction ;
+    owl:onProperty :registeredBy ;
+    owl:minCardinality "1"^^xsd:nonNegativeInteger ;
+    rdfs:comment "Каждый гражданин должен иметь хотя бы одну запись в реестре."@ru
+] .
+
+:Citizen rdfs:subClassOf [
+    a owl:Restriction ;
+    owl:onProperty :locatedAt ;
+    owl:minCardinality "1"^^xsd:nonNegativeInteger ;
+    rdfs:comment "У каждого гражданина должно быть хотя бы одно местоположение."@ru
+] .
+
+:RegistryRecord rdfs:subClassOf [
+    a owl:Restriction ;
+    owl:onProperty :issuedByAgency ;
+    owl:qualifiedCardinality "1"^^xsd:nonNegativeInteger ;
+    owl:onClass :Agency ;
+    rdfs:comment "Каждая запись реестра выдана ровно одним ведомством."@ru
+] .
+
+:Agency rdfs:subClassOf [
+    a owl:Restriction ;
+    owl:onProperty :locatedAt ;
+    owl:minCardinality "1"^^xsd:nonNegativeInteger ;
+    rdfs:comment "У каждого ведомства должно быть местоположение."@ru
+] .
+
+# =============================================================================
+# 5. ТИПИРОВАННЫЕ ЭКЗЕМПЛЯРЫ (контрпарные к индивидам A)
+# =============================================================================
+
+:citizen-001 a :Citizen ;
+    :name "Иванов Иван Иванович" ;
+    :locatedAt :loc-001 ;
+    :registeredBy :rec-001-2024 ;
+    :livesAt :lp-001 ;
+    rdfs:label "Гражданин 001 (Иванов И. И.)"@ru .
+
+:citizen-002 a :Citizen ;
+    :name "Петров Пётр Петрович" ;
+    :locatedAt :loc-002 ;
+    :registeredBy :rec-002-2025 ;
+    :livesAt :lp-002 ;
+    rdfs:label "Гражданин 002 (Петров П. П.)"@ru .
+
+:loc-001 a :Location ;
+    :regionCode "50" ;
+    rdfs:label "Местоположение 001 (МО)"@ru ;
+    rdfs:comment "Московская область, г. Подольск, ул. Ленина, д. 1, кв. 2"@ru .
+
+:loc-002 a :Location ;
+    :regionCode "77" ;
+    rdfs:label "Местоположение 002 (Москва)"@ru ;
+    rdfs:comment "г. Москва, ул. Тверская, д. 10, кв. 25"@ru .
+
+:rec-001-2024 a :RegistryRecord ;
+    :effectiveDate "2024-01-15"^^xsd:date ;
+    :recordStatus "действующий" ;
+    :issuedByAgency :agency-001 ;
+    rdfs:label "Запись реестра 001 (2024)"@ru .
+
+:rec-002-2025 a :RegistryRecord ;
+    :effectiveDate "2025-03-14"^^xsd:date ;
+    :recordStatus "действующий" ;
+    :issuedByAgency :agency-002 ;
+    rdfs:label "Запись реестра 002 (2025)"@ru .
+
+:lp-001 a :LivingPlace ;
+    :placeType "постоянное" ;
+    rdfs:label "Место проживания 001"@ru .
+
+:lp-002 a :LivingPlace ;
+    :placeType "постоянное" ;
+    rdfs:label "Место проживания 002"@ru .
+
+:agency-001 a :Agency ;
+    rdfs:label "ОВМ МВД г. Подольска"@ru ;
+    rdfs:comment "Отдел по вопросам миграции МВД России по г. о. Подольск."@ru ;
+    :locatedAt :loc-agency-001 .
+
+:agency-002 a :Agency ;
+    rdfs:label "УВМ МВД г. Москвы"@ru ;
+    rdfs:comment "Управление по вопросам миграции МВД России по г. Москве."@ru ;
+    :locatedAt :loc-agency-002 .
+
+:loc-agency-001 a :Location ;
+    :regionCode "50" ;
+    rdfs:label "Местоположение агентства 001"@ru .
+
+:loc-agency-002 a :Location ;
+    :regionCode "77" ;
+    rdfs:label "Местоположение агентства 002"@ru .
+
+# =============================================================================
+# 6. ОГРАНИЧЕНИЯ ЦЕЛОСТНОСТИ (для тестов SHACL/OWL2RL, контрпарные к A)
+# =============================================================================
+
+:RegistryRecord rdfs:subClassOf [
+    a owl:Restriction ;
+    owl:onProperty :effectiveDate ;
+    owl:qualifiedCardinality "1"^^xsd:nonNegativeInteger ;
+    owl:onDataRange xsd:date ;
+    rdfs:comment "Инвариант SS-1 (B): у каждой записи реестра есть ровно одна дата вступления в силу."@ru
+] .
+
+:Citizen rdfs:subClassOf [
+    a owl:Restriction ;
+    owl:onProperty :name ;
+    owl:minCardinality "1"^^xsd:nonNegativeInteger ;
+    rdfs:comment "Инвариант SS-2 (B): у каждого гражданина есть имя."@ru
+] .
+
+:Location rdfs:subClassOf [
+    a owl:Restriction ;
+    owl:onProperty :regionCode ;
+    owl:minCardinality "1"^^xsd:nonNegativeInteger ;
+    rdfs:comment "Инвариант SS-2 (B): у каждого местоположения есть код субъекта."@ru
+] .
+
+# ============================================================================
+# Конец файла ontology-b.owl
+# Сводка: 5 классов, 5 объектных свойств (4 основных + 1 обратное),
+# 5 свойств данных (3 основных + 2 вспомогательных), 5 ограничений,
+# 12 индивидов, 10 owl:equivalentClass/Property связей с A.
+# ============================================================================
