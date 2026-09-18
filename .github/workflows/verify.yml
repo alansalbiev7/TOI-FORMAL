@@ -1,0 +1,49 @@
+name: Verify formal models and laboratory core
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  lean:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Install pinned Lean 4.19.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(cat lean-toolchain)" = "leanprover/lean4:v4.19.0"
+          curl --fail --location --retry 3 https://github.com/leanprover/lean4/releases/download/v4.19.0/lean-4.19.0-linux.tar.zst -o /tmp/lean.tar.zst
+          echo "6fe3ce97a58f44e2b3567d455b994eacec5bfe9ae7774f2a573444480ba813fe  /tmp/lean.tar.zst" | sha256sum --check
+          tar --no-same-owner --zstd -xf /tmp/lean.tar.zst -C /tmp
+          echo "/tmp/lean-4.19.0-linux/bin" >> "$GITHUB_PATH"
+      - name: Fetch pinned dependency cache
+        run: lake exe cache get Mathlib.Order.Hom.BoundedLattice Mathlib.Order.Ideal Mathlib.Order.Closure Mathlib.Data.Set.Lattice Mathlib.Logic.Equiv.Defs Mathlib.Logic.Function.Basic Mathlib.Order.Fin.Basic
+      - name: Structural checks
+        run: |
+          python3 scripts/check_repository.py
+          python3 -m unittest discover -s scripts -p 'test_*.py'
+      - name: Build and audit transitive axioms
+        run: python3 scripts/check_axioms.py
+  scala:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Verify wrapper integrity
+        run: python3 scripts/check_wrapper.py
+      - name: Compile, test and package
+        working-directory: asg-core
+        run: bash ./gradlew --no-daemon clean test installDist
+      - name: Run laboratory example
+        run: asg-core/build/install/asg-core/bin/asg-core examples/valid-mapping.ttl shapes/mapping.ttl sparql/mapping-regression.rq
