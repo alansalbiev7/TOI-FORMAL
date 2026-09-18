@@ -1,58 +1,19 @@
-# CITATION.cff — формат описания цитирования программного обеспечения ASG
-# Спецификация: Citation File Format (CFF) 1.2.0
-# Валидатор: https://github.com/citation-file-format/cff-converter-python
-# GitHub автоматически распознаёт CFF и предлагает "Cite this repository"
-# в боковой панели репозитория.
-
 cff-version: 1.2.0
-message: "Если ASG используется в вашем исследовании или продукте, пожалуйста, цитируйте как указано ниже."
-title: "ASG — Adaptive Semantic Gateway для семантической интероперабельности СМЭВ"
-abstract: >-
-  Адаптивный семантический шлюз (ASG) — REST/gRPC-сервис трансляции
-  запросов между онтологиями СМЭВ (Система межведомственного
-  электронного взаимодействия) с трёхуровневой верификацией: SHACL,
-  OWL2RL и формальными доказательствами Lean 4 (Теорема 1.1).
-  Реализован на Scala 3 + Akka Typed, развёртывается в Kubernetes,
-  обеспечивает p95-latency < 50 мс при cache-hit.
+message: "При использовании укажите версию или точный коммит репозитория."
+title: "ТОИ — формальные модели и лабораторное ядро интероперабельности"
+type: software
 authors:
   - family-names: "Салбиев"
     given-names: "Алан Тасолтанович"
-    email: "alansalbiev@yandex.ru"
-    affiliation: "ИРЭ РАН"
-    orcid: "https://orcid.org/0009-0005-6185-5664"
-  - name: "Команда разработки ASG"
-    email: "alansalbiev@yandex.ru"
-version: "1.0.0"
-date-released: "2026-08-15"
 url: "https://github.com/alansalbiev7/TOI-FORMAL"
 repository-code: "https://github.com/alansalbiev7/TOI-FORMAL"
+abstract: >-
+  Исследовательские модели к научной редакции монографии
+  «Технология обеспечения интероперабельности». Формальные утверждения
+  Lean 4 и лабораторные проверки данных имеют явно ограниченные области применения.
 keywords:
-  - "СМЭВ"
-  - "интероперабельность"
-  - "семантический-шлюз"
-  - "онтологии"
-  - "Scala"
-  - "Akka"
-  - "SHACL"
-  - "OWL2RL"
-  - "Lean-4"
-  - "государственные-ИТ"
-license: "Apache-2.0"
-license-url: "https://spdx.org/licenses/Apache-2.0.html"
-type: software
-preferred-citation:
-  type: article
-  title: "ASG: Адаптивный семантический шлюз для интероперабельности государственных информационных систем СМЭВ"
-  authors:
-    - family-names: "Салбиев"
-      given-names: "Алан Тасолтанович"
-  doi: "10.5281/zenodo.21905639"
-  start: 45
-  end: 72
-identifiers:
-  - type: doi
-    value: "10.5281/zenodo.21905639"
-    description: "Концептуальный DOI для всех версий ASG (Zenodo)"
-  - type: url
-    value: "https://github.com/alansalbiev7/TOI-FORMAL/releases/tag/v1.0.0"
-    description: "Release v1.0.0"
+  - interoperability
+  - ontologies
+  - Lean 4
+  - formal verification
+license: Apache-2.0

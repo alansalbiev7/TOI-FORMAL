@@ -1,0 +1,9 @@
+# Finite checks over explicit metadata. Missing data is rejected by SHACL.
+# No inference of ontology inconsistency from absence of instances.
+PREFIX toi: <https://example.org/toi#>
+SELECT ?mapping WHERE {
+  ?mapping a toi:Mapping ;
+    toi:sourceUnit ?su ; toi:targetUnit ?tu ;
+    toi:sourceMeaning ?sm ; toi:targetMeaning ?tm .
+  FILTER (?su != ?tu || ?sm != ?tm)
+}

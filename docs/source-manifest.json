@@ -1,0 +1,17 @@
+{
+  "baseline_commit": "1737ca4448a43b05f1f56b1a2f82e19a2cf14255",
+  "sources": [
+    {
+      "title": "Научная редакция монографии, 16.09.2026",
+      "sha256": "ab7f85166639968d0ffb3cdb63647a9d8236f85d9280ed7244080a29d6122c5e",
+      "access": "Provided by author; not redistributed",
+      "role": "editorial alignment, not external validation"
+    },
+    {
+      "title": "Методология, архитектура и разработка, приложение П1",
+      "sha256": "6541d1ee83fd2129517fdca741d2538770330f0aee58416b1c1ba2f6783226d5",
+      "access": "Provided by author; not redistributed",
+      "role": "editorial alignment, not external validation"
+    }
+  ]
+}
